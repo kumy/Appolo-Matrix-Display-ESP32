@@ -50,6 +50,8 @@ private:
   ClockPage clockPage_;
   Page* activePage_ = nullptr;
   uint32_t lastFrameAtUs_ = 0;
+  uint32_t lastRenderStartedUs_ = 0;
   uint32_t lastFrameWindowMs_ = 0;
   uint32_t framesThisWindow_ = 0;
+  uint32_t targetFramePeriodUs_ = 16667;
 };

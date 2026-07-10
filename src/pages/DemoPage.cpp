@@ -71,6 +71,22 @@ void DemoPage::draw(Renderer& renderer) {
       renderer.drawText(2, 5, String("SWEEP"), 2);
       break;
     }
+    case DemoSceneId::Checkerboard:
+      for (int16_t y = 0; y < 16; ++y) {
+        for (int16_t x = 0; x < 80; ++x) {
+          renderer.drawPixel(x, y, ((x + y + (millis() / 250UL)) & 1U) == 0U ? 15 : 0);
+        }
+      }
+      break;
+    case DemoSceneId::EdgeStress:
+      renderer.drawRect(0, 0, 80, 16, 15);
+      for (int16_t y = 0; y < 16; y += 2) {
+        renderer.drawLine(0, y, 79, y, 8);
+      }
+      for (int16_t x = 0; x < 80; x += 4) {
+        renderer.drawLine(x, 0, x, 15, (x % 8 == 0) ? 15 : 4);
+      }
+      break;
     case DemoSceneId::Diagnostics: {
       renderer.drawText(0, 0, String("FPS ") + String(stats_.appFps), 15);
       renderer.drawText(0, 7, String("LAT ") + String(stats_.frameLatencyUs / 1000UL), 10);
@@ -90,7 +106,9 @@ void DemoPage::advanceScene() {
     case DemoSceneId::MultilineText: scene_ = DemoSceneId::Clock; break;
     case DemoSceneId::Clock: scene_ = DemoSceneId::Bitmap; break;
     case DemoSceneId::Bitmap: scene_ = DemoSceneId::Transition; break;
-    case DemoSceneId::Transition: scene_ = DemoSceneId::Diagnostics; break;
+    case DemoSceneId::Transition: scene_ = DemoSceneId::Checkerboard; break;
+    case DemoSceneId::Checkerboard: scene_ = DemoSceneId::EdgeStress; break;
+    case DemoSceneId::EdgeStress: scene_ = DemoSceneId::Diagnostics; break;
     case DemoSceneId::Diagnostics: scene_ = DemoSceneId::Fill; break;
   }
 }

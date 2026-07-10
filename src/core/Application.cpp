@@ -29,18 +29,28 @@ void Application::begin() {
   activePage_ = &demoPage_;
   activePage_->enter();
   lastFrameAtUs_ = micros();
+  lastRenderStartedUs_ = lastFrameAtUs_;
   lastFrameWindowMs_ = millis();
 }
 
 void Application::tick() {
   const uint32_t nowMs = millis();
-  const uint32_t renderStartedUs = micros();
+  const uint32_t nowUs = micros();
+
+  display_.serviceScan(nowUs);
 
   wifi_.poll();
   http_.poll();
   mqtt_.poll();
   ota_.poll();
   clock_.updateFromMillis(nowMs);
+
+  if ((nowUs - lastRenderStartedUs_) < targetFramePeriodUs_) {
+    return;
+  }
+
+  const uint32_t renderStartedUs = micros();
+  lastRenderStartedUs_ = renderStartedUs;
 
   activePage_->update(nowMs);
   renderer_.beginFrame(backBuffer_);

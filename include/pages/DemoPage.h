@@ -17,6 +17,8 @@ enum class DemoSceneId {
   Clock,
   Bitmap,
   Transition,
+  Checkerboard,
+  EdgeStress,
   Diagnostics,
 };
 

@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include <cstddef>
+
 #include "core/RuntimeStats.h"
 #include "display/DisplayConfig.h"
 
@@ -9,6 +11,7 @@ class FrameBuffer4;
 
 class DisplayDriver {
 public:
+  ~DisplayDriver();
   bool begin(const DisplayConfig& config);
   void setPower(bool enabled);
   void setBrightness(uint8_t brightness);
@@ -19,14 +22,27 @@ public:
   uint8_t brightness() const;
 
 private:
+  void blankOutput();
+  void enableOutput();
+  void setRowAddress(uint8_t row);
+  void latchRow();
+  void buildScanPlanes(const FrameBuffer4& frame, uint8_t* destination);
+  void advanceScanPosition();
+
   DisplayConfig config_;
-  const FrameBuffer4* activeFrame_ = nullptr;
-  const FrameBuffer4* pendingFrame_ = nullptr;
+  uint8_t* scanBuffers_[2] = {nullptr, nullptr};
+  size_t rowBytes_ = 0;
+  size_t planeBytes_ = 0;
+  size_t scanBufferBytes_ = 0;
+  int8_t activeScanBufferIndex_ = 0;
+  int8_t pendingScanBufferIndex_ = -1;
   uint32_t presentQueuedAtUs_ = 0;
-  uint32_t lastBoundaryUs_ = 0;
-  uint32_t lastRefreshTickUs_ = 0;
-  uint32_t simulatedFramePeriodUs_ = 16000;
-  uint32_t frameCounter_ = 0;
+  uint32_t lastRefreshWindowStartedMs_ = 0;
+  uint32_t currentSlotStartedUs_ = 0;
+  uint32_t currentSlotDurationUs_ = 100;
+  uint32_t refreshFramesThisWindow_ = 0;
+  uint8_t currentRow_ = 0;
+  uint8_t currentPlane_ = 0;
   bool powerEnabled_ = true;
   uint8_t brightness_ = 255;
   RuntimeStats stats_;
