@@ -52,6 +52,7 @@ The system MUST support:
 - flicker-free refresh
 - 4-bit grayscale using BAM
 - double-buffered rendering
+- built-in self-test and demo modes for core display features
 - pages and animations as first-class concepts
 - Wi-Fi, MQTT, HTTP, OTA, NTP, persistent settings, and logging
 - non-blocking networking that never compromises display refresh
@@ -129,12 +130,31 @@ The new implementation MUST support all of the following feature groups.
 - monochrome physical panel output
 - logical 4-bit grayscale rendering using BAM
 - text rendering with custom fonts
+- multiline text rendering
 - static and animated bitmap display
 - sprite rendering
 - multiple page types
 - global brightness control
 - power control
 - display preview API support for future web UI
+
+### Bring-Up And Demo Features
+
+The initial implementation MUST include built-in demo modes so the platform can be validated without MQTT, HTTP, or external assets.
+
+At minimum, phase 1 MUST include demos for:
+
+- full-screen fill on and off
+- grayscale ramp or staircase across all 16 logical levels
+- primitive drawing: pixels, lines, rectangles, filled rectangles, and circles if implemented
+- text rendering with at least one font
+- multiline text rendering
+- clock rendering
+- bitmap or logo rendering
+- animation and transition behavior
+- brightness and power behavior
+
+These demo modes SHOULD be accessible through a local demo page sequence, a default boot mode, and optionally HTTP or MQTT commands.
 
 ### Networking Features
 
@@ -356,6 +376,43 @@ The renderer MUST NOT:
 - know refresh timing
 - manage network state
 
+#### Text And Multiline Text Requirements
+
+Text support in phase 1 MUST include:
+
+- explicit newline handling using `\n`
+- multi-line layout within a bounded region
+- left alignment at minimum
+- clipping against the framebuffer bounds
+- configurable line spacing
+
+The preferred phase 1 text behavior is:
+
+- newline characters always start a new line
+- lines render top-to-bottom
+- glyph rendering outside the target bounds is clipped
+- vertical overflow is clipped, not wrapped infinitely
+
+Word wrap MAY be added in phase 1, but newline-driven multiline layout is mandatory.
+
+Recommended API extensions:
+
+```cpp
+enum class TextWrapMode {
+  None,
+  Character,
+  Word
+};
+
+struct TextLayoutOptions {
+  int16_t maxWidth;
+  int16_t maxHeight;
+  int8_t lineSpacing;
+  TextWrapMode wrapMode;
+  HorizontalAlign align;
+};
+```
+
 Recommended renderer API:
 
 ```cpp
@@ -370,6 +427,7 @@ public:
     void drawBitmap(int16_t x, int16_t y, const Bitmap& bitmap);
     void drawSprite(int16_t x, int16_t y, const Sprite& sprite);
     void drawText(int16_t x, int16_t y, StringView text, const FontAsset& font, uint8_t gray);
+    void drawTextBox(int16_t x, int16_t y, const TextLayoutOptions& options, StringView text, const FontAsset& font, uint8_t gray);
 };
 ```
 
@@ -521,6 +579,7 @@ Required phase 1 page types:
 - `AnimationPage`
 - `LogoPage`
 - `DiagnosticsPage`
+- `DemoPage`
 
 Future page classes MAY include:
 
@@ -531,6 +590,36 @@ Future page classes MAY include:
 - scripting-backed pages
 
 Pages MUST be hardware-agnostic. Their job is to own display content and state transitions, not display scan details.
+
+### Demo Mode Architecture
+
+The initial implementation MUST treat demos as first-class validation pages rather than ad hoc test code.
+
+Recommended demo structure:
+
+```cpp
+enum class DemoSceneId {
+  Fill,
+  Grayscale,
+  Primitives,
+  Text,
+  MultilineText,
+  Clock,
+  Bitmap,
+  Sprite,
+  Transition,
+  Diagnostics
+};
+```
+
+Recommended behavior:
+
+- `DemoPage` cycles through scenes automatically or by command
+- each scene is deterministic and visually easy to verify
+- each scene exercises one subsystem clearly
+- diagnostics scene displays measured frame and refresh statistics
+
+The demo suite is a product requirement for bring-up, regression testing, and field diagnostics.
 
 ### Scheduler
 
@@ -582,6 +671,8 @@ Recommended split:
 - `NtpService`: background synchronization source
 
 Pages MUST consume time through `ClockService`, not directly through Wi-Fi or UDP code.
+
+Clock rendering in phase 1 MUST be demonstrated locally even if NTP is unavailable, using either unsynced system time or a synthetic fallback clock source until synchronization succeeds.
 
 ## Event-Driven Integration
 
@@ -985,6 +1076,143 @@ The exact partition MAY vary depending on library behavior, but refresh isolatio
 - rendering MUST target the back buffer only
 - no task other than the display driver MAY read scanout staging structures while they are being updated
 
+## Performance And Optimization Review
+
+The old prototype proves that the baseline panel is easy to light, but it also reveals obvious inefficiencies that the new implementation SHOULD remove.
+
+### Main Bottlenecks In The Old Prototype
+
+The recovered `gfx6.1` driver spends significant time in:
+
+- busy-wait loops for per-row on-time and off-time
+- `SPI.beginTransaction()` and `SPI.endTransaction()` on every row
+- row-by-row `memcpy()` into a temporary row buffer before transfer
+- full software sequencing of every latch and dwell interval
+- a 1-bit pipeline that cannot scale cleanly to 4-bit BAM without much more CPU load
+
+### Optimizations That Are Realistically Valuable
+
+The following optimizations are technically plausible and SHOULD be considered part of the implementation strategy.
+
+#### 1. Dedicated Refresh Task
+
+Use a dedicated high-priority refresh task pinned to one core so row scan timing is isolated from application and network jitter.
+
+Why it matters:
+
+- removes the old sketch's `for (;;)` refresh loop from the generic Arduino `loop()` model
+- makes timing ownership explicit
+- reduces interference from HTTP, MQTT, and page logic
+
+#### 2. Hardware Timer Or Deterministic Driver Timing
+
+Use a hardware timer, high-resolution esp timer, or tightly bounded task timing to drive BAM dwell timing rather than raw busy-wait loops wherever practical.
+
+Why it matters:
+
+- frees CPU for rendering and networking
+- reduces timing drift
+- scales better once each row becomes 4 BAM subframes instead of a single on/off slot
+
+#### 3. Single SPI Setup With Reused Transactions
+
+Avoid reinitializing SPI transaction state for every row when the bus settings are constant.
+
+Why it matters:
+
+- reduces per-row overhead
+- lowers software jitter
+- becomes more important under BAM where the row submission count increases
+
+#### 4. Precomputed BAM Planes
+
+Precompute bit-plane row payloads from the front buffer after `present()` rather than extracting individual row/bit values repeatedly during the live refresh loop.
+
+Why it matters:
+
+- moves work out of the timing-critical scan path
+- gives deterministic refresh cost
+- allows the refresh task to run mostly as a transport engine
+
+Recommended model:
+
+- application presents a `4 bpp` frame
+- driver converts it into packed row/plane buffers once per displayed frame
+- refresh loop only emits prebuilt row payloads
+
+#### 5. Atomic Front-Buffer Publication
+
+Publish a new scanout frame by pointer swap or generation swap rather than copying whole buffers inside the refresh path.
+
+Why it matters:
+
+- minimizes scanout latency
+- reduces risk of tearing
+- matches the good part of the old prototype while scaling better to grayscale
+
+#### 6. Remove Per-Row Temporary Copy Where Possible
+
+The old prototype copies each row into a `rowbuffer` before `SPI.transfer()`. The new driver SHOULD use directly addressable, scan-ready row storage where possible.
+
+Why it matters:
+
+- removes avoidable memory traffic
+- reduces per-row overhead
+- simplifies deterministic timing
+
+#### 7. Overlap Rendering And Network Work With Scanout
+
+True overlap already exists at the task level on ESP32: while one task scans the current frame, another task can render the next frame or process network events.
+
+Why it matters:
+
+- this is the most important form of concurrency for this project
+- it gives real performance benefit without compromising determinism
+
+This is a better optimization target than trying to invent coupling between NTP or RTC synchronization and SPI transfer timing.
+
+#### 8. Optional Peripheral-Level Optimization
+
+If required after measurement, the implementation MAY explore lower-level ESP32 transfer options such as DMA-backed SPI or other peripheral-assisted output strategies.
+
+Why it matters:
+
+- can reduce CPU time per row burst
+- may improve consistency under higher grayscale load
+
+This should be treated as a measured optimization, not a default complexity choice.
+
+### Optimizations That Are Not Primary Wins
+
+The following ideas are not expected to be first-order performance wins for this panel:
+
+- coupling RTC or NTP synchronization to SPI timing
+- optimizing wall-clock sync frequency before fixing refresh-path overhead
+- premature introduction of complex asset compression in the scan pipeline
+
+The dominant cost is the real-time row refresh path. Optimize that first.
+
+### Optimization Priority Order
+
+The implementation SHOULD prioritize optimization in this order:
+
+1. deterministic dedicated refresh architecture
+2. precomputed BAM row-plane payloads
+3. reduced SPI and row-copy overhead
+4. atomic frame publication
+5. only then lower-level DMA or peripheral experiments if measurements justify them
+
+### Required Performance Instrumentation
+
+The new implementation MUST expose measurements for:
+
+- effective refresh rate
+- application frame rate
+- display driver frame publish latency
+- dropped or skipped frame count
+- render time per application frame
+- optional per-plane scan timing in debug builds
+
 ## Memory Strategy
 
 The spec explicitly prioritizes low memory use and future headroom.
@@ -1115,7 +1343,9 @@ Must deliver:
 - double-buffered `4 bpp` framebuffer
 - basic renderer primitives
 - text rendering with at least one custom font
+- newline-driven multiline text
 - page manager with `ClockPage`, `TextPage`, and `DiagnosticsPage`
+- `DemoPage` containing built-in feature demos
 - NTP time sync
 - Wi-Fi station mode
 - JSON HTTP API
@@ -1160,6 +1390,8 @@ The implementation MUST be validated against these acceptance checks.
 - no visible tearing on page transitions
 - global brightness changes are smooth and bounded
 - BAM grayscale visibly distinguishes multiple intensity levels
+- multiline text renders correct line breaks and clipping
+- demo scenes cover fill, grayscale, primitives, text, clock, bitmap, animation, and diagnostics
 
 ### Performance Validation
 
