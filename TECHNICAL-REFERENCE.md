@@ -182,6 +182,7 @@ The system MUST satisfy these engineering properties:
 - refresh path MUST be independent from networking latency
 - rendering SHOULD target `60 FPS`, with `30 FPS` as the minimum normal operating target
 - display output MUST remain visually stable during Wi-Fi reconnects, OTA idle periods, and HTTP/MQTT traffic bursts
+- implementation MUST actively prevent tearing and common scan artifacts such as flicker, ghosting, shimmer, row bleeding, partial-frame updates, and unstable brightness
 - runtime memory allocation during steady-state rendering SHOULD be avoided
 - public module boundaries MUST be documented and testable
 - future features MUST be addable as modules, not by entangling existing modules
@@ -289,6 +290,27 @@ The driver SHOULD support:
 - atomic pointer swap to the current scanout frame
 - a blank frame fallback when power is off
 - refresh statistics such as scan rate, dropped presents, and last frame time
+
+#### Visual Integrity Requirements
+
+The display driver and presentation path MUST be designed to prevent visible defects that are common in multiplexed LED matrices.
+
+At minimum, the implementation MUST guard against:
+
+- tearing caused by publishing a frame while it is being scanned
+- ghosting caused by incorrect output-enable and latch sequencing
+- shimmer or brightness pumping caused by unstable BAM dwell timing
+- row bleeding caused by changing row address or column state while output is active
+- partial-frame display caused by exposing incomplete plane or row data
+- transient corruption during page transitions, brightness changes, or network-triggered updates
+
+Recommended protections:
+
+- blank output before changing row address or latch state
+- publish new frames only at a defined frame boundary or generation boundary
+- build scan-ready BAM data before it becomes visible
+- keep row and plane timing deterministic
+- treat power-state and brightness changes as synchronized presentation events rather than immediate asynchronous GPIO changes
 
 #### Geometry Model
 
@@ -618,6 +640,13 @@ Recommended behavior:
 - each scene is deterministic and visually easy to verify
 - each scene exercises one subsystem clearly
 - diagnostics scene displays measured frame and refresh statistics
+
+The diagnostics-oriented demo scenes SHOULD also include visual defect checks, for example:
+
+- fast alternating fill patterns to reveal tearing
+- edge and checkerboard patterns to reveal ghosting or row bleed
+- grayscale ramps to reveal BAM instability or shimmer
+- scrolling text to reveal timing jitter and clipping errors
 
 The demo suite is a product requirement for bring-up, regression testing, and field diagnostics.
 
@@ -1034,10 +1063,24 @@ Diagnostics SHOULD expose:
 - free heap and largest free block
 - refresh frequency
 - application FPS
+- frame latency and render latency
+- present-to-visible latency estimate where measurable
+- jitter or variance metrics for frame time and refresh time
+- dropped present count and scan underrun count
 - Wi-Fi RSSI
 - MQTT reconnect counters
 - current page and animation
 - NTP sync state
+
+The system SHOULD support both machine-readable and visual diagnostics.
+
+Recommended visual diagnostics modes on the LED matrix:
+
+- a compact text overlay for FPS, latency, or refresh rate when a small font is available
+- a right-edge single-column histogram or sparkline representing recent frame time, latency, dropped frames, or brightness budget
+- a diagnostics page that cycles between textual stats and minimal graphical indicators
+
+Visual diagnostics MUST be optional and MUST NOT interfere with normal page rendering unless the diagnostics mode or overlay is explicitly enabled.
 
 ## Tasking And Core Allocation
 
@@ -1209,9 +1252,19 @@ The new implementation MUST expose measurements for:
 - effective refresh rate
 - application frame rate
 - display driver frame publish latency
+- render latency and end-to-end frame latency where measurable
 - dropped or skipped frame count
+- scan underrun count
+- frame-time jitter or variance
 - render time per application frame
 - optional per-plane scan timing in debug builds
+
+Recommended metric windows:
+
+- instantaneous latest sample
+- rolling average over the last `1 s`
+- rolling average over the last `10 s`
+- rolling max or worst-case sample over the same interval
 
 ## Memory Strategy
 
@@ -1388,10 +1441,14 @@ The implementation MUST be validated against these acceptance checks.
 - row addressing maps exactly to expected physical rows
 - no visible flicker at target brightness levels
 - no visible tearing on page transitions
+- no visible tearing during continuous animation or scrolling text
+- no visible ghosting, row bleed, unstable grayscale shimmer, or partial-frame artifacts under normal operation
 - global brightness changes are smooth and bounded
 - BAM grayscale visibly distinguishes multiple intensity levels
 - multiline text renders correct line breaks and clipping
 - demo scenes cover fill, grayscale, primitives, text, clock, bitmap, animation, and diagnostics
+
+The display validation plan SHOULD explicitly include pattern-based tests for visual artifacts, not only subjective observation during normal content.
 
 ### Performance Validation
 
