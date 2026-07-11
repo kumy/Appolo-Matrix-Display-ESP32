@@ -1,6 +1,7 @@
 #include "display/Renderer.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 constexpr uint8_t kGlyphSpace = 4;
@@ -148,6 +149,37 @@ void Renderer::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t gray
     for (int16_t col = 0; col < w; ++col) {
       drawPixel(x + col, y + row, gray);
     }
+  }
+}
+
+void Renderer::drawCircle(int16_t cx, int16_t cy, int16_t radius, uint8_t gray) {
+  int16_t x = radius;
+  int16_t y = 0;
+  int16_t err = 0;
+  while (x >= y) {
+    drawPixel(cx + x, cy + y, gray);
+    drawPixel(cx + y, cy + x, gray);
+    drawPixel(cx - y, cy + x, gray);
+    drawPixel(cx - x, cy + y, gray);
+    drawPixel(cx - x, cy - y, gray);
+    drawPixel(cx - y, cy - x, gray);
+    drawPixel(cx + y, cy - x, gray);
+    drawPixel(cx + x, cy - y, gray);
+    ++y;
+    if (err <= 0) {
+      err += 2 * y + 1;
+    }
+    if (err > 0) {
+      --x;
+      err -= 2 * x + 1;
+    }
+  }
+}
+
+void Renderer::fillCircle(int16_t cx, int16_t cy, int16_t radius, uint8_t gray) {
+  for (int16_t row = -radius; row <= radius; ++row) {
+    const int16_t span = static_cast<int16_t>(sqrtf(static_cast<float>(radius * radius - row * row)));
+    drawLine(static_cast<int16_t>(cx - span), static_cast<int16_t>(cy + row), static_cast<int16_t>(cx + span), static_cast<int16_t>(cy + row), gray);
   }
 }
 

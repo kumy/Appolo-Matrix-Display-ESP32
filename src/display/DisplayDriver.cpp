@@ -1,11 +1,13 @@
 #include "display/DisplayDriver.h"
 
 #include <SPI.h>
+#include <array>
 #include <cstring>
 
 #include <driver/gpio.h>
 
 #include "display/FrameBuffer4.h"
+#include "display/GrayLevels.h"
 
 namespace {
 constexpr uint8_t kPlaneCount = 4;
@@ -17,27 +19,28 @@ constexpr uint8_t kBamPlaneSchedule[kBamSliceCount] = {
   3, 2, 3, 1,
   3, 2, 3,
 };
-constexpr uint8_t kGrayLevelLut[6] = {
-  0, 4, 7, 10, 13, 15,
-};
+
+// Expands GrayLevels::kLevels (the small, hand-written canonical palette)
+// into a direct-index table covering all 16 raw 4-bit pixel values, so the
+// per-pixel hot path in buildScanPlanes() stays an O(1) array lookup. Built
+// at compile time from GrayLevels::kLevels alone via GrayLevels::nearest()
+// (the same nearest-match logic pages use for procedural shading), so
+// growing or shrinking the palette there is sufficient, nothing here needs
+// to change. By construction every canonical value maps to itself (its own
+// distance is always the unique minimum of 0), so the palette values are
+// always stable fixed points of this table.
+constexpr std::array<uint8_t, 16> buildGrayLevelLut() {
+  std::array<uint8_t, 16> table{};
+  for (uint16_t raw = 0; raw < 16; ++raw) {
+    table[raw] = GrayLevels::nearest(static_cast<uint8_t>(raw));
+  }
+  return table;
+}
+
+constexpr std::array<uint8_t, 16> kGrayLevelLut = buildGrayLevelLut();
 
 uint8_t quantizeGrayLevel(uint8_t level) {
-  if (level == 0U) {
-    return kGrayLevelLut[0];
-  }
-  if (level <= 3U) {
-    return kGrayLevelLut[1];
-  }
-  if (level <= 6U) {
-    return kGrayLevelLut[2];
-  }
-  if (level <= 9U) {
-    return kGrayLevelLut[3];
-  }
-  if (level <= 12U) {
-    return kGrayLevelLut[4];
-  }
-  return kGrayLevelLut[5];
+  return kGrayLevelLut[level];
 }
 }
 
@@ -74,6 +77,13 @@ bool DisplayDriver::begin(const DisplayConfig& config) {
   }
 
   SPI.begin(config_.pinClk, -1, config_.pinMosi, -1);
+  // Held open for the driver's entire lifetime: serviceScan() calls
+  // SPI.transfer() up to ~40,000 times/sec (15 BAM slices x 16 rows per
+  // refresh), and re-doing SPI.beginTransaction()/endTransaction() on every
+  // one of those was measurable dead time subtracted from the fixed
+  // row-multiplexing duty budget (see DisplayDriver.h). Safe only because
+  // nothing else in this codebase shares this SPI peripheral instance.
+  SPI.beginTransaction(SPISettings(config_.spiHz, MSBFIRST, SPI_MODE0));
   blankOutput();
   digitalWrite(config_.pinLatch, HIGH);
 
@@ -152,14 +162,12 @@ void DisplayDriver::serviceScan(uint32_t nowMicros) {
 
   setRowAddress(currentRow_);
 
-  SPI.beginTransaction(SPISettings(config_.spiHz, MSBFIRST, SPI_MODE0));
   gpio_set_level(static_cast<gpio_num_t>(config_.pinLatch), 0);
   const uint8_t planeIndex = kBamPlaneSchedule[currentSliceIndex_];
   const size_t rowOffset = static_cast<size_t>(planeIndex) * planeBytes_ + static_cast<size_t>(currentRow_) * rowBytes_;
   memcpy(transferRowBuffer_, scanBuffers_[activeScanBufferIndex_] + rowOffset, rowBytes_);
   SPI.transfer(transferRowBuffer_, rowBytes_);
   latchRow();
-  SPI.endTransaction();
 
   enableOutput();
   currentSlotStartedUs_ = nowMicros;
