@@ -3,16 +3,48 @@
 #include <SPI.h>
 #include <cstring>
 
+#include <driver/gpio.h>
+
 #include "display/FrameBuffer4.h"
 
 namespace {
 constexpr uint8_t kPlaneCount = 4;
-constexpr uint16_t kBasePlaneQuantumUs = 50;
+constexpr uint16_t kBasePlaneQuantumUs = 24;
+constexpr uint8_t kBamSliceCount = 15;
+constexpr uint8_t kBamPlaneSchedule[kBamSliceCount] = {
+  3, 2, 3, 1,
+  3, 2, 3, 0,
+  3, 2, 3, 1,
+  3, 2, 3,
+};
+constexpr uint8_t kGrayLevelLut[6] = {
+  0, 4, 7, 10, 13, 15,
+};
+
+uint8_t quantizeGrayLevel(uint8_t level) {
+  if (level == 0U) {
+    return kGrayLevelLut[0];
+  }
+  if (level <= 3U) {
+    return kGrayLevelLut[1];
+  }
+  if (level <= 6U) {
+    return kGrayLevelLut[2];
+  }
+  if (level <= 9U) {
+    return kGrayLevelLut[3];
+  }
+  if (level <= 12U) {
+    return kGrayLevelLut[4];
+  }
+  return kGrayLevelLut[5];
+}
 }
 
 DisplayDriver::~DisplayDriver() {
   delete[] scanBuffers_[0];
   delete[] scanBuffers_[1];
+  delete[] transferRowBuffer_;
 }
 
 bool DisplayDriver::begin(const DisplayConfig& config) {
@@ -24,13 +56,16 @@ bool DisplayDriver::begin(const DisplayConfig& config) {
 
   delete[] scanBuffers_[0];
   delete[] scanBuffers_[1];
+  delete[] transferRowBuffer_;
   scanBuffers_[0] = new uint8_t[scanBufferBytes_];
   scanBuffers_[1] = new uint8_t[scanBufferBytes_];
-  if (scanBuffers_[0] == nullptr || scanBuffers_[1] == nullptr) {
+  transferRowBuffer_ = new uint8_t[rowBytes_];
+  if (scanBuffers_[0] == nullptr || scanBuffers_[1] == nullptr || transferRowBuffer_ == nullptr) {
     return false;
   }
   memset(scanBuffers_[0], 0, scanBufferBytes_);
   memset(scanBuffers_[1], 0, scanBufferBytes_);
+  memset(transferRowBuffer_, 0, rowBytes_);
 
   pinMode(config_.pinLatch, OUTPUT);
   pinMode(config_.pinEnable, OUTPUT);
@@ -45,7 +80,7 @@ bool DisplayDriver::begin(const DisplayConfig& config) {
   activeScanBufferIndex_ = 0;
   pendingScanBufferIndex_ = -1;
   currentRow_ = 0;
-  currentPlane_ = 0;
+  currentSliceIndex_ = 0;
   currentSlotStartedUs_ = micros();
   currentSlotDurationUs_ = kBasePlaneQuantumUs;
   lastRefreshWindowStartedMs_ = millis();
@@ -64,13 +99,20 @@ void DisplayDriver::setBrightness(uint8_t brightness) {
 }
 
 void DisplayDriver::present(const FrameBuffer4& frame) {
-  const int8_t stagedBufferIndex = activeScanBufferIndex_ == 0 ? 1 : 0;
+  int8_t stagedBufferIndex = 0;
+  portENTER_CRITICAL(&scanMux_);
+  stagedBufferIndex = activeScanBufferIndex_ == 0 ? 1 : 0;
+  portEXIT_CRITICAL(&scanMux_);
+
   buildScanPlanes(frame, scanBuffers_[stagedBufferIndex]);
+
+  portENTER_CRITICAL(&scanMux_);
   if (pendingScanBufferIndex_ >= 0) {
     ++stats_.droppedPresents;
   }
   pendingScanBufferIndex_ = stagedBufferIndex;
   presentQueuedAtUs_ = micros();
+  portEXIT_CRITICAL(&scanMux_);
 }
 
 void DisplayDriver::serviceScan(uint32_t nowMicros) {
@@ -89,13 +131,16 @@ void DisplayDriver::serviceScan(uint32_t nowMicros) {
 
   blankOutput();
 
-  if (currentRow_ == 0 && currentPlane_ == 0) {
+  if (currentRow_ == 0 && currentSliceIndex_ == 0) {
+    portENTER_CRITICAL(&scanMux_);
     if (pendingScanBufferIndex_ >= 0) {
       activeScanBufferIndex_ = pendingScanBufferIndex_;
       pendingScanBufferIndex_ = -1;
       stats_.publishLatencyUs = nowMicros - presentQueuedAtUs_;
       stats_.frameLatencyUs = stats_.publishLatencyUs;
     }
+    portEXIT_CRITICAL(&scanMux_);
+
     ++refreshFramesThisWindow_;
     const uint32_t nowMs = millis();
     if ((nowMs - lastRefreshWindowStartedMs_) >= 1000UL) {
@@ -108,17 +153,18 @@ void DisplayDriver::serviceScan(uint32_t nowMicros) {
   setRowAddress(currentRow_);
 
   SPI.beginTransaction(SPISettings(config_.spiHz, MSBFIRST, SPI_MODE0));
-  digitalWrite(config_.pinLatch, LOW);
-  const size_t rowOffset = static_cast<size_t>(currentPlane_) * planeBytes_ + static_cast<size_t>(currentRow_) * rowBytes_;
-  SPI.transfer(scanBuffers_[activeScanBufferIndex_] + rowOffset, rowBytes_);
+  gpio_set_level(static_cast<gpio_num_t>(config_.pinLatch), 0);
+  const uint8_t planeIndex = kBamPlaneSchedule[currentSliceIndex_];
+  const size_t rowOffset = static_cast<size_t>(planeIndex) * planeBytes_ + static_cast<size_t>(currentRow_) * rowBytes_;
+  memcpy(transferRowBuffer_, scanBuffers_[activeScanBufferIndex_] + rowOffset, rowBytes_);
+  SPI.transfer(transferRowBuffer_, rowBytes_);
   latchRow();
   SPI.endTransaction();
 
   enableOutput();
   currentSlotStartedUs_ = nowMicros;
 
-  const uint32_t weightedDuration = kBasePlaneQuantumUs << currentPlane_;
-  currentSlotDurationUs_ = max<uint32_t>(1UL, (weightedDuration * max<uint8_t>(brightness_, 1U)) / 255UL);
+  currentSlotDurationUs_ = max<uint32_t>(1UL, (static_cast<uint32_t>(kBasePlaneQuantumUs) * max<uint8_t>(brightness_, 1U)) / 255UL);
   if (brightness_ == 0) {
     currentSlotDurationUs_ = 1;
   }
@@ -139,38 +185,44 @@ uint8_t DisplayDriver::brightness() const {
 }
 
 void DisplayDriver::blankOutput() {
-  digitalWrite(config_.pinEnable, config_.enableActiveLow ? HIGH : LOW);
+  gpio_set_level(static_cast<gpio_num_t>(config_.pinEnable), config_.enableActiveLow ? 1 : 0);
 }
 
 void DisplayDriver::enableOutput() {
-  digitalWrite(config_.pinEnable, config_.enableActiveLow ? LOW : HIGH);
+  gpio_set_level(static_cast<gpio_num_t>(config_.pinEnable), config_.enableActiveLow ? 0 : 1);
 }
 
 void DisplayDriver::setRowAddress(uint8_t row) {
   for (uint8_t bit = 0; bit < config_.rowAddressBits && bit < 4; ++bit) {
-    digitalWrite(config_.pinRow[bit], (row >> bit) & 0x01U);
+    gpio_set_level(static_cast<gpio_num_t>(config_.pinRow[bit]), (row >> bit) & 0x01U);
   }
 }
 
 void DisplayDriver::latchRow() {
-  digitalWrite(config_.pinLatch, HIGH);
-  digitalWrite(config_.pinLatch, LOW);
+  gpio_set_level(static_cast<gpio_num_t>(config_.pinLatch), 1);
+  gpio_set_level(static_cast<gpio_num_t>(config_.pinLatch), 0);
 }
 
 void DisplayDriver::buildScanPlanes(const FrameBuffer4& frame, uint8_t* destination) {
   memset(destination, 0, scanBufferBytes_);
-  for (uint8_t plane = 0; plane < kPlaneCount; ++plane) {
-    const size_t planeOffset = static_cast<size_t>(plane) * planeBytes_;
-    for (uint16_t y = 0; y < config_.height; ++y) {
-      uint8_t* rowBytes = destination + planeOffset + static_cast<size_t>(y) * rowBytes_;
-      for (uint16_t x = 0; x < config_.width; ++x) {
-        const uint8_t gray = frame.getPixel(x, y);
-        if (((gray >> plane) & 0x01U) == 0U) {
+  for (uint16_t y = 0; y < config_.height; ++y) {
+    for (uint16_t x = 0; x < config_.width; ++x) {
+      const uint8_t level = quantizeGrayLevel(frame.getPixel(x, y) & 0x0FU);
+      if (level == 0U) {
+        continue;
+      }
+
+      const size_t byteIndex = x / 8U;
+      const uint8_t bitMask = static_cast<uint8_t>(0x80U >> (x % 8U));
+      for (uint8_t planeIndex = 0; planeIndex < kPlaneCount; ++planeIndex) {
+        if ((level & (1U << planeIndex)) == 0U) {
           continue;
         }
-        const size_t byteIndex = x / 8U;
-        const uint8_t bitMask = static_cast<uint8_t>(0x80U >> (x % 8U));
-        rowBytes[byteIndex] = static_cast<uint8_t>(rowBytes[byteIndex] | bitMask);
+
+        uint8_t* planeRowBytes = destination
+          + static_cast<size_t>(planeIndex) * planeBytes_
+          + static_cast<size_t>(y) * rowBytes_;
+        planeRowBytes[byteIndex] = static_cast<uint8_t>(planeRowBytes[byteIndex] | bitMask);
       }
     }
   }
@@ -180,6 +232,6 @@ void DisplayDriver::advanceScanPosition() {
   ++currentRow_;
   if (currentRow_ >= config_.height) {
     currentRow_ = 0;
-    currentPlane_ = static_cast<uint8_t>((currentPlane_ + 1U) % kPlaneCount);
+    currentSliceIndex_ = static_cast<uint8_t>((currentSliceIndex_ + 1U) % kBamSliceCount);
   }
 }

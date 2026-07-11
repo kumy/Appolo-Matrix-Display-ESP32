@@ -14,6 +14,16 @@ const uint8_t kLogo[8 * 8] = {
     1, 0, 0, 1, 1, 0, 0, 1,
     0, 1, 1, 0, 0, 1, 1, 0,
 };
+const uint8_t kGrayscaleRamp[] = {0, 3, 9, 12, 15};
+constexpr size_t kGrayscaleRampCount = sizeof(kGrayscaleRamp) / sizeof(kGrayscaleRamp[0]);
+const uint8_t kK2000TrailLevels[] = {
+  13, 13,
+  10, 10, 10,
+  7, 7, 7, 7,
+  4, 4, 4, 4, 4, 4,
+  0, 0, 0,
+};
+constexpr size_t kK2000TrailLength = sizeof(kK2000TrailLevels) / sizeof(kK2000TrailLevels[0]);
 }
 
 DemoPage::DemoPage(ClockService& clock, RuntimeStats& stats) : clock_(clock), stats_(stats) {}
@@ -36,9 +46,10 @@ void DemoPage::draw(Renderer& renderer) {
       renderer.clear(15);
       break;
     case DemoSceneId::Grayscale:
-      for (int16_t x = 0; x < 80; ++x) {
-        const uint8_t gray = static_cast<uint8_t>((x * 16) / 80);
-        renderer.fillRect(x, 0, 1, 16, gray);
+      for (size_t index = 0; index < kGrayscaleRampCount; ++index) {
+        const int16_t x0 = static_cast<int16_t>((80U * index) / kGrayscaleRampCount);
+        const int16_t x1 = static_cast<int16_t>((80U * (index + 1U)) / kGrayscaleRampCount);
+        renderer.fillRect(x0, 0, static_cast<int16_t>(x1 - x0), 16, kGrayscaleRamp[index]);
       }
       break;
     case DemoSceneId::Primitives:
@@ -66,9 +77,29 @@ void DemoPage::draw(Renderer& renderer) {
       renderer.drawBitmap(36, 4, kLogo, 8, 8, 15);
       break;
     case DemoSceneId::Transition: {
-      const uint32_t phase = (millis() / 50UL) % 80UL;
-      renderer.fillRect(0, 0, static_cast<int16_t>(phase), 16, 14);
-      renderer.drawText(2, 5, String("SWEEP"), 2);
+      constexpr int16_t kSweepSpan = 79;
+      const uint32_t step = (millis() / 28UL) % (static_cast<uint32_t>(kSweepSpan) * 2UL);
+      int16_t headX = 0;
+      int16_t direction = 1;
+      if (step <= static_cast<uint32_t>(kSweepSpan)) {
+        headX = static_cast<int16_t>(step);
+        direction = 1;
+      } else {
+        headX = static_cast<int16_t>((static_cast<uint32_t>(kSweepSpan) * 2UL) - step);
+        direction = -1;
+      }
+
+      renderer.fillRect(headX, 2, 1, 12, 15);
+
+      for (size_t index = 0; index < kK2000TrailLength; ++index) {
+        const int16_t x = static_cast<int16_t>(headX - ((static_cast<int16_t>(index) + 1) * direction));
+        if (x < 0 || x >= 80) {
+          continue;
+        }
+        renderer.fillRect(x, 2, 1, 12, kK2000TrailLevels[index]);
+      }
+
+      renderer.drawRect(0, 1, 80, 14, 2);
       break;
     }
     case DemoSceneId::Checkerboard:
@@ -100,15 +131,19 @@ void DemoPage::draw(Renderer& renderer) {
 void DemoPage::advanceScene() {
   switch (scene_) {
     case DemoSceneId::Fill: scene_ = DemoSceneId::Grayscale; break;
-    case DemoSceneId::Grayscale: scene_ = DemoSceneId::Primitives; break;
-    case DemoSceneId::Primitives: scene_ = DemoSceneId::Text; break;
-    case DemoSceneId::Text: scene_ = DemoSceneId::MultilineText; break;
-    case DemoSceneId::MultilineText: scene_ = DemoSceneId::Clock; break;
-    case DemoSceneId::Clock: scene_ = DemoSceneId::Bitmap; break;
-    case DemoSceneId::Bitmap: scene_ = DemoSceneId::Transition; break;
-    case DemoSceneId::Transition: scene_ = DemoSceneId::Checkerboard; break;
-    case DemoSceneId::Checkerboard: scene_ = DemoSceneId::EdgeStress; break;
-    case DemoSceneId::EdgeStress: scene_ = DemoSceneId::Diagnostics; break;
-    case DemoSceneId::Diagnostics: scene_ = DemoSceneId::Fill; break;
+    case DemoSceneId::Grayscale: scene_ = DemoSceneId::Transition; break;
+    case DemoSceneId::Transition: scene_ = DemoSceneId::Fill; break;
+    case DemoSceneId::EdgeStress: scene_ = DemoSceneId::Fill; break;
+    // case DemoSceneId::Fill: scene_ = DemoSceneId::Grayscale; break;
+    // case DemoSceneId::Grayscale: scene_ = DemoSceneId::Primitives; break;
+    // case DemoSceneId::Primitives: scene_ = DemoSceneId::Text; break;
+    // case DemoSceneId::Text: scene_ = DemoSceneId::MultilineText; break;
+    // case DemoSceneId::MultilineText: scene_ = DemoSceneId::Clock; break;
+    // case DemoSceneId::Clock: scene_ = DemoSceneId::Bitmap; break;
+    // case DemoSceneId::Bitmap: scene_ = DemoSceneId::Transition; break;
+    // case DemoSceneId::Transition: scene_ = DemoSceneId::Checkerboard; break;
+    // case DemoSceneId::Checkerboard: scene_ = DemoSceneId::EdgeStress; break;
+    // case DemoSceneId::EdgeStress: scene_ = DemoSceneId::Diagnostics; break;
+    // case DemoSceneId::Diagnostics: scene_ = DemoSceneId::Fill; break;
   }
 }

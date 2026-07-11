@@ -30,7 +30,9 @@ private:
   void advanceScanPosition();
 
   DisplayConfig config_;
+  portMUX_TYPE scanMux_ = portMUX_INITIALIZER_UNLOCKED;
   uint8_t* scanBuffers_[2] = {nullptr, nullptr};
+  uint8_t* transferRowBuffer_ = nullptr;
   size_t rowBytes_ = 0;
   size_t planeBytes_ = 0;
   size_t scanBufferBytes_ = 0;
@@ -42,7 +44,7 @@ private:
   uint32_t currentSlotDurationUs_ = 100;
   uint32_t refreshFramesThisWindow_ = 0;
   uint8_t currentRow_ = 0;
-  uint8_t currentPlane_ = 0;
+  uint8_t currentSliceIndex_ = 0;
   bool powerEnabled_ = true;
   uint8_t brightness_ = 255;
   RuntimeStats stats_;

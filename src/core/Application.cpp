@@ -1,5 +1,9 @@
 #include "core/Application.h"
 
+#include <esp32-hal.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include "util/Logger.h"
 
 Application::Application()
@@ -31,13 +35,24 @@ void Application::begin() {
   lastFrameAtUs_ = micros();
   lastRenderStartedUs_ = lastFrameAtUs_;
   lastFrameWindowMs_ = millis();
+
+  xTaskCreatePinnedToCore(
+      &Application::refreshTaskEntry,
+      "DisplayRefresh",
+      4096,
+      this,
+      1,
+      &refreshTaskHandle_,
+      0);
+
+    // Core 0 is currently dedicated to the refresh task, so the default idle watchdog
+    // becomes a false positive until scan timing is moved to a timer-assisted path.
+    disableCore0WDT();
 }
 
 void Application::tick() {
   const uint32_t nowMs = millis();
   const uint32_t nowUs = micros();
-
-  display_.serviceScan(nowUs);
 
   wifi_.poll();
   http_.poll();
@@ -61,7 +76,6 @@ void Application::tick() {
   stats_.renderLatencyUs = renderEndedUs - renderStartedUs;
 
   display_.present(frontBuffer_);
-  display_.serviceScan(renderEndedUs);
 
   const uint32_t frameDeltaUs = renderEndedUs - lastFrameAtUs_;
   stats_.frameTimeJitterUs = frameDeltaUs > 16667UL ? (frameDeltaUs - 16667UL) : (16667UL - frameDeltaUs);
@@ -80,4 +94,14 @@ void Application::tick() {
   stats_.frameLatencyUs = driverStats.frameLatencyUs;
   stats_.droppedPresents += driverStats.droppedPresents;
   stats_.scanUnderruns += driverStats.scanUnderruns;
+}
+
+void Application::refreshTaskEntry(void* parameter) {
+  static_cast<Application*>(parameter)->refreshTaskLoop();
+}
+
+void Application::refreshTaskLoop() {
+  for (;;) {
+    display_.serviceScan(micros());
+  }
 }

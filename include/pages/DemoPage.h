@@ -35,6 +35,6 @@ private:
 
   ClockService& clock_;
   RuntimeStats& stats_;
-  DemoSceneId scene_ = DemoSceneId::Fill;
+  DemoSceneId scene_ = DemoSceneId::Transition;
   uint32_t sceneStartedAtMs_ = 0;
 };

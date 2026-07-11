@@ -26,6 +26,9 @@ public:
   void tick();
 
 private:
+  static void refreshTaskEntry(void* parameter);
+  void refreshTaskLoop();
+
   static constexpr uint16_t kWidth = 80;
   static constexpr uint16_t kHeight = 16;
   static constexpr size_t kBufferSize = FrameBuffer4::bytesFor(kWidth, kHeight);
@@ -49,6 +52,7 @@ private:
   TextPage textPage_;
   ClockPage clockPage_;
   Page* activePage_ = nullptr;
+  TaskHandle_t refreshTaskHandle_ = nullptr;
   uint32_t lastFrameAtUs_ = 0;
   uint32_t lastRenderStartedUs_ = 0;
   uint32_t lastFrameWindowMs_ = 0;

@@ -6,7 +6,7 @@
 
 struct DeviceSettings {
   DisplayConfig display;
-  uint8_t brightness = 192;
+  uint8_t brightness = 255;
   bool powerOn = true;
   String hostname = "matrix-display-2026";
 };
