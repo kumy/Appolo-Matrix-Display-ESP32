@@ -1,6 +1,7 @@
 #include "pages/DemoPage.h"
 
 #include <cmath>
+#include <cstring>
 
 #include "display/GrayLevels.h"
 #include "display/Renderer.h"
@@ -41,6 +42,133 @@ const uint8_t kHeartFull[5 * 5] = {
 };
 constexpr uint32_t kHeartLifetimeMs = 1800;
 
+// Space Invaders sprites, 7x5, two walk frames (legs alternate).
+const uint8_t kAlienFrameA[7 * 5] = {
+    0, 0, 1, 1, 1, 0, 0,
+    0, 1, 1, 1, 1, 1, 0,
+    1, 1, 0, 1, 0, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    0, 1, 0, 0, 0, 1, 0,
+};
+const uint8_t kAlienFrameB[7 * 5] = {
+    0, 0, 1, 1, 1, 0, 0,
+    0, 1, 1, 1, 1, 1, 0,
+    1, 1, 0, 1, 0, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    1, 0, 1, 0, 1, 0, 1,
+};
+const uint8_t kCannonSprite[3 * 3] = {
+    0, 1, 0,
+    1, 1, 1,
+    1, 1, 1,
+};
+
+// Mario sprites, 6x7, two walk frames.
+const uint8_t kMarioFrameA[6 * 7] = {
+    0, 0, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1,
+    1, 1, 0, 1, 0, 0,
+    1, 1, 1, 1, 1, 0,
+    0, 0, 1, 1, 1, 0,
+    0, 1, 1, 0, 1, 1,
+    1, 1, 0, 0, 0, 1,
+};
+const uint8_t kMarioFrameB[6 * 7] = {
+    0, 0, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1,
+    1, 1, 0, 1, 0, 0,
+    1, 1, 1, 1, 1, 0,
+    0, 0, 1, 1, 1, 0,
+    1, 1, 0, 1, 1, 0,
+    0, 0, 1, 0, 0, 1,
+};
+// Goomba sprites, 5x4, two walk frames.
+const uint8_t kGoombaFrameA[5 * 4] = {
+    0, 1, 1, 1, 0,
+    1, 1, 1, 1, 1,
+    1, 0, 1, 0, 1,
+    0, 1, 0, 1, 0,
+};
+const uint8_t kGoombaFrameB[5 * 4] = {
+    0, 1, 1, 1, 0,
+    1, 1, 1, 1, 1,
+    1, 0, 1, 0, 1,
+    1, 0, 0, 0, 1,
+};
+const uint8_t kMushroomSprite[5 * 4] = {
+    0, 1, 1, 1, 0,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+    0, 1, 1, 1, 0,
+};
+const uint8_t kQuestionBlockSprite[5 * 5] = {
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 1,
+    1, 0, 1, 0, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+};
+
+constexpr uint32_t kFireworkSparkLifetimeMs = 700;
+
+// Tetromino rotation table: [pieceType][rotation][cell][0=fallOffset,
+// 1=lane]. fallOffset grows away from the spawn edge (toward the floor);
+// lane is the perpendicular axis a piece can be offset along. Pieces with
+// fewer than 4 distinct rotations repeat entries so every piece uniformly
+// has 4 rotation slots and callers never need to special-case rotation
+// count. Order: I, O, T, S, Z, J, L.
+constexpr int8_t kPieceShapes[7][4][4][2] = {
+    // I
+    {
+        {{1, 0}, {1, 1}, {1, 2}, {1, 3}},
+        {{0, 2}, {1, 2}, {2, 2}, {3, 2}},
+        {{1, 0}, {1, 1}, {1, 2}, {1, 3}},
+        {{0, 2}, {1, 2}, {2, 2}, {3, 2}},
+    },
+    // O
+    {
+        {{0, 1}, {0, 2}, {1, 1}, {1, 2}},
+        {{0, 1}, {0, 2}, {1, 1}, {1, 2}},
+        {{0, 1}, {0, 2}, {1, 1}, {1, 2}},
+        {{0, 1}, {0, 2}, {1, 1}, {1, 2}},
+    },
+    // T
+    {
+        {{0, 1}, {1, 0}, {1, 1}, {1, 2}},
+        {{0, 1}, {1, 1}, {1, 2}, {2, 1}},
+        {{1, 0}, {1, 1}, {1, 2}, {2, 1}},
+        {{0, 1}, {1, 0}, {1, 1}, {2, 1}},
+    },
+    // S
+    {
+        {{0, 1}, {0, 2}, {1, 0}, {1, 1}},
+        {{0, 1}, {1, 1}, {1, 2}, {2, 2}},
+        {{0, 1}, {0, 2}, {1, 0}, {1, 1}},
+        {{0, 1}, {1, 1}, {1, 2}, {2, 2}},
+    },
+    // Z
+    {
+        {{0, 0}, {0, 1}, {1, 1}, {1, 2}},
+        {{0, 2}, {1, 1}, {1, 2}, {2, 1}},
+        {{0, 0}, {0, 1}, {1, 1}, {1, 2}},
+        {{0, 2}, {1, 1}, {1, 2}, {2, 1}},
+    },
+    // J
+    {
+        {{0, 0}, {1, 0}, {1, 1}, {1, 2}},
+        {{0, 1}, {0, 2}, {1, 1}, {2, 1}},
+        {{1, 0}, {1, 1}, {1, 2}, {2, 2}},
+        {{0, 1}, {1, 1}, {2, 0}, {2, 1}},
+    },
+    // L
+    {
+        {{0, 2}, {1, 0}, {1, 1}, {1, 2}},
+        {{0, 1}, {1, 1}, {2, 1}, {2, 2}},
+        {{1, 0}, {1, 1}, {1, 2}, {2, 0}},
+        {{0, 0}, {0, 1}, {1, 1}, {2, 1}},
+    },
+};
+
 // Oscillates between [minValue, minValue+span], one unit per msPerStep,
 // reflecting at both ends — a pure function of elapsed time, so every scene
 // using it restarts from the same deterministic phase on each scene visit
@@ -75,8 +203,8 @@ void DemoPage::enter() {
 void DemoPage::update(uint32_t nowMs) {
   if ((nowMs - sceneStartedAtMs_) >= sceneDurationMs()) {
     sceneStartedAtMs_ = nowMs;
-    advanceScene();
-    resetSceneState(nowMs);
+    // advanceScene();
+    // resetSceneState(nowMs);
   }
 
   switch (scene_) {
@@ -85,6 +213,15 @@ void DemoPage::update(uint32_t nowMs) {
       break;
     case DemoSceneId::SparklingHearts:
       updateHearts(nowMs);
+      break;
+    case DemoSceneId::Tetris:
+      updateTetris(nowMs);
+      break;
+    case DemoSceneId::Pong:
+      updatePong(nowMs);
+      break;
+    case DemoSceneId::Fireworks:
+      updateFireworks(nowMs);
       break;
     default:
       break;
@@ -100,7 +237,11 @@ uint32_t DemoPage::sceneDurationMs() const {
     case DemoSceneId::BouncingBall: return 5000UL;
     case DemoSceneId::SparklingHearts: return 6000UL;
     case DemoSceneId::Snake: return 10000UL;
-    case DemoSceneId::SpaceInvaders: return 6000UL;
+    case DemoSceneId::SpaceInvaders: return 8000UL;
+    case DemoSceneId::Tetris: return 14000UL;
+    case DemoSceneId::Pong: return 12000UL;
+    case DemoSceneId::Mario: return 9000UL;
+    case DemoSceneId::Fireworks: return 8000UL;
     default: return 2000UL;
   }
 }
@@ -115,6 +256,15 @@ void DemoPage::resetSceneState(uint32_t nowMs) {
         heart.active = false;
       }
       heartsNextSpawnCheckMs_ = nowMs;
+      break;
+    case DemoSceneId::Tetris:
+      resetTetris();
+      break;
+    case DemoSceneId::Pong:
+      resetPong();
+      break;
+    case DemoSceneId::Fireworks:
+      resetFireworks(nowMs);
       break;
     default:
       break;
@@ -388,29 +538,41 @@ void DemoPage::draw(Renderer& renderer) {
       break;
     }
     case DemoSceneId::SpaceInvaders: {
+      // Real animated sprites (not squares): two walk frames toggling as
+      // the whole formation marches side to side, plus a slow sawtooth
+      // descent (advance a little each "wave", snap back to the top for
+      // the next one) standing in for a 2D display's version of "coming at
+      // you". Back row rendered dimmer than the front row for a depth cue.
       constexpr uint8_t kCols = 6;
       constexpr uint8_t kRows = 2;
-      constexpr int16_t kCellW = 8;
+      constexpr int16_t kAlienW = 7;
+      constexpr int16_t kAlienH = 5;
+      constexpr int16_t kCellW = 10;
       constexpr int16_t kCellH = 5;
-      constexpr int16_t kAlienW = 5;
-      constexpr int16_t kAlienH = 3;
       constexpr int16_t kFormationWidth = kCols * kCellW;
       constexpr int16_t kMarchSpan = 80 - kFormationWidth;
+      constexpr int16_t kDescendMax = 3;
+      constexpr uint32_t kDescendCycleMs = 10000UL;
+
       const int16_t originX = pingPong(elapsed, 90UL, 0, kMarchSpan);
-      constexpr int16_t kOriginY = 0;
+      const uint32_t descendPhase = elapsed % kDescendCycleMs;
+      const int16_t originY = static_cast<int16_t>((static_cast<uint32_t>(kDescendMax) * descendPhase) / kDescendCycleMs);
+      const uint8_t walkFrame = static_cast<uint8_t>((elapsed / 400UL) % 2UL);
+      const uint8_t* alienBitmap = walkFrame == 0 ? kAlienFrameA : kAlienFrameB;
 
       for (uint8_t row = 0; row < kRows; ++row) {
+        const uint8_t rowShade = GrayLevels::shade(row + 1U, kRows + 1U);
         for (uint8_t col = 0; col < kCols; ++col) {
           const int16_t ax = static_cast<int16_t>(originX + col * kCellW);
-          const int16_t ay = static_cast<int16_t>(kOriginY + row * kCellH);
-          renderer.fillRect(ax, ay, kAlienW, kAlienH, GrayLevels::shade(row + 1U, kRows + 1U));
+          const int16_t ay = static_cast<int16_t>(originY + row * kCellH);
+          renderer.drawBitmap(ax, ay, alienBitmap, kAlienW, kAlienH, rowShade);
         }
       }
 
-      constexpr int16_t kCannonW = 3;
+      constexpr int16_t kCannonSize = 3;
       constexpr int16_t kCannonY = 13;
-      const int16_t cannonX = pingPong(elapsed, 40UL, 0, 80 - kCannonW);
-      renderer.fillRect(cannonX, kCannonY, kCannonW, 2, GrayLevels::kFull);
+      const int16_t cannonX = pingPong(elapsed, 40UL, 0, 80 - kCannonSize);
+      renderer.drawBitmap(cannonX, kCannonY, kCannonSprite, kCannonSize, kCannonSize, GrayLevels::kFull);
 
       constexpr uint32_t kShotPeriodMs = 900UL;
       constexpr uint32_t kShotTravelMs = 500UL;
@@ -418,8 +580,93 @@ void DemoPage::draw(Renderer& renderer) {
       if (shotPhase < kShotTravelMs) {
         const int16_t shotY = static_cast<int16_t>(kCannonY - 1 - (shotPhase * (kCannonY - 1)) / kShotTravelMs);
         if (shotY >= 0) {
-          renderer.drawPixel(static_cast<int16_t>(cannonX + kCannonW / 2), shotY, GrayLevels::shade(2, 3));
+          renderer.drawPixel(static_cast<int16_t>(cannonX + kCannonSize / 2), shotY, GrayLevels::shade(2, 3));
         }
+      }
+      break;
+    }
+    case DemoSceneId::Tetris: {
+      constexpr int16_t kCell = TetrisState::kCellSize;
+      for (uint8_t d = 0; d < TetrisState::kDepth; ++d) {
+        for (uint8_t lane = 0; lane < TetrisState::kLanes; ++lane) {
+          const uint8_t shade = tetris_.board[d][lane];
+          if (shade == 0) {
+            continue;
+          }
+          renderer.fillRect(static_cast<int16_t>(d * kCell), static_cast<int16_t>(lane * kCell), kCell, kCell, shade);
+        }
+      }
+      for (uint8_t i = 0; i < 4; ++i) {
+        const int16_t d = static_cast<int16_t>(tetris_.pieceDepth - kPieceShapes[tetris_.pieceType][tetris_.pieceRotation][i][0]);
+        const int16_t lane = static_cast<int16_t>(tetris_.pieceLane + kPieceShapes[tetris_.pieceType][tetris_.pieceRotation][i][1]);
+        if (d < 0 || d >= static_cast<int16_t>(TetrisState::kDepth) || lane < 0 || lane >= static_cast<int16_t>(TetrisState::kLanes)) {
+          continue;
+        }
+        renderer.fillRect(static_cast<int16_t>(d * kCell), static_cast<int16_t>(lane * kCell), kCell, kCell, GrayLevels::kFull);
+      }
+      break;
+    }
+    case DemoSceneId::Pong: {
+      renderer.drawLine(0, 6, 79, 6, GrayLevels::shade(1, 4));
+      const String score = String(pong_.leftScore) + String("-") + String(pong_.rightScore);
+      const int16_t scoreX = static_cast<int16_t>(40 - static_cast<int16_t>(score.length()) * 2);
+      renderer.drawText(scoreX, 0, score, GrayLevels::kFull);
+
+      renderer.fillRect(2, static_cast<int16_t>(pong_.leftPaddleY), 2, 4, GrayLevels::kFull);
+      renderer.fillRect(76, static_cast<int16_t>(pong_.rightPaddleY), 2, 4, GrayLevels::kFull);
+      renderer.fillCircle(static_cast<int16_t>(pong_.ballX), static_cast<int16_t>(pong_.ballY), 1, GrayLevels::shade(2, 3));
+      break;
+    }
+    case DemoSceneId::Mario: {
+      constexpr uint32_t kCycleMs = 8000UL;
+      const uint32_t t = elapsed % kCycleMs;
+
+      renderer.drawLine(0, 15, 79, 15, GrayLevels::shade(1, 3));
+
+      constexpr int16_t kBlockX = 40;
+      constexpr int16_t kBlockY = 2;
+      const int16_t bob = ((t / 500UL) % 2UL == 0UL) ? 0 : 1;
+      renderer.drawBitmap(kBlockX, static_cast<int16_t>(kBlockY + bob), kQuestionBlockSprite, 5, 5, GrayLevels::shade(2, 3));
+
+      constexpr int16_t kMarioStartX = -6;
+      constexpr int16_t kMarioEndX = 66;
+      const int16_t marioX = static_cast<int16_t>(kMarioStartX + (static_cast<int64_t>(kMarioEndX - kMarioStartX) * t) / kCycleMs);
+      const uint8_t marioFrame = static_cast<uint8_t>((t / 200UL) % 2UL);
+      renderer.drawBitmap(marioX, 8, marioFrame == 0 ? kMarioFrameA : kMarioFrameB, 6, 7, GrayLevels::kFull);
+
+      constexpr uint32_t kMushroomStart = 3000UL;
+      constexpr uint32_t kMushroomEnd = 5500UL;
+      if (t >= kMushroomStart && t < kMushroomEnd) {
+        const uint32_t mt = t - kMushroomStart;
+        const int16_t mushroomX = static_cast<int16_t>(kBlockX + (mt * 24UL) / (kMushroomEnd - kMushroomStart));
+        renderer.drawBitmap(mushroomX, 9, kMushroomSprite, 5, 4, GrayLevels::kFull);
+      }
+
+      constexpr int16_t kGoombaStartX = 80;
+      constexpr int16_t kGoombaEndX = -5;
+      const int16_t goombaX = static_cast<int16_t>(kGoombaStartX + (static_cast<int64_t>(kGoombaEndX - kGoombaStartX) * t) / kCycleMs);
+      const uint8_t goombaFrame = static_cast<uint8_t>((t / 220UL) % 2UL);
+      renderer.drawBitmap(goombaX, 11, goombaFrame == 0 ? kGoombaFrameA : kGoombaFrameB, 5, 4, GrayLevels::shade(1, 2));
+      break;
+    }
+    case DemoSceneId::Fireworks: {
+      for (const auto& rocket : fireworks_.rockets) {
+        if (!rocket.active) {
+          continue;
+        }
+        renderer.drawPixel(static_cast<int16_t>(rocket.x), static_cast<int16_t>(rocket.y), GrayLevels::kFull);
+      }
+      for (const auto& spark : fireworks_.sparks) {
+        if (!spark.active) {
+          continue;
+        }
+        const uint32_t age = nowMs - spark.bornMs;
+        const uint32_t remaining = kFireworkSparkLifetimeMs > age ? kFireworkSparkLifetimeMs - age : 0UL;
+        const uint8_t shade = GrayLevels::shade(remaining, kFireworkSparkLifetimeMs);
+        if (shade == GrayLevels::kBlack) {
+          continue;
+        }
+        renderer.drawPixel(static_cast<int16_t>(spark.x), static_cast<int16_t>(spark.y), shade);
       }
       break;
     }
@@ -443,7 +690,11 @@ void DemoPage::advanceScene() {
     case DemoSceneId::BouncingBall: scene_ = DemoSceneId::SparklingHearts; break;
     case DemoSceneId::SparklingHearts: scene_ = DemoSceneId::Snake; break;
     case DemoSceneId::Snake: scene_ = DemoSceneId::SpaceInvaders; break;
-    case DemoSceneId::SpaceInvaders: scene_ = DemoSceneId::Fill; break;
+    case DemoSceneId::SpaceInvaders: scene_ = DemoSceneId::Tetris; break;
+    case DemoSceneId::Tetris: scene_ = DemoSceneId::Pong; break;
+    case DemoSceneId::Pong: scene_ = DemoSceneId::Mario; break;
+    case DemoSceneId::Mario: scene_ = DemoSceneId::Fireworks; break;
+    case DemoSceneId::Fireworks: scene_ = DemoSceneId::Fill; break;
   }
 }
 
@@ -582,6 +833,321 @@ void DemoPage::updateHearts(uint32_t nowMs) {
       heart.spawnMs = nowMs;
       heart.x = static_cast<int16_t>(random(0, 76));
       heart.y = static_cast<int16_t>(random(0, 12));
+      break;
+    }
+  }
+}
+
+bool DemoPage::tetrisPlacementValid(uint8_t pieceType, uint8_t rotation, int8_t laneOffset, int16_t depthOffset) const {
+  for (uint8_t i = 0; i < 4; ++i) {
+    const int16_t d = static_cast<int16_t>(depthOffset - kPieceShapes[pieceType][rotation][i][0]);
+    const int16_t lane = static_cast<int16_t>(laneOffset + kPieceShapes[pieceType][rotation][i][1]);
+    if (d < 0 || d >= static_cast<int16_t>(TetrisState::kDepth) || lane < 0 || lane >= static_cast<int16_t>(TetrisState::kLanes)) {
+      return false;
+    }
+    if (tetris_.board[d][lane] != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int16_t DemoPage::tetrisSimulateDrop(uint8_t pieceType, uint8_t rotation, int8_t laneOffset) const {
+  int16_t depthOffset = static_cast<int16_t>(TetrisState::kDepth - 1);
+  if (!tetrisPlacementValid(pieceType, rotation, laneOffset, depthOffset)) {
+    return -1;
+  }
+  while (tetrisPlacementValid(pieceType, rotation, laneOffset, static_cast<int16_t>(depthOffset - 1))) {
+    --depthOffset;
+  }
+  return depthOffset;
+}
+
+int32_t DemoPage::tetrisScorePlacement(uint8_t pieceType, uint8_t rotation, int8_t laneOffset, int16_t depthOffset) const {
+  int16_t cellDepth[4];
+  int16_t cellLane[4];
+  for (uint8_t i = 0; i < 4; ++i) {
+    cellDepth[i] = static_cast<int16_t>(depthOffset - kPieceShapes[pieceType][rotation][i][0]);
+    cellLane[i] = static_cast<int16_t>(laneOffset + kPieceShapes[pieceType][rotation][i][1]);
+  }
+
+  auto occupied = [&](int16_t d, int16_t lane) {
+    if (d < 0 || d >= static_cast<int16_t>(TetrisState::kDepth) || lane < 0 || lane >= static_cast<int16_t>(TetrisState::kLanes)) {
+      return true;
+    }
+    if (tetris_.board[d][lane] != 0) {
+      return true;
+    }
+    for (uint8_t i = 0; i < 4; ++i) {
+      if (cellDepth[i] == d && cellLane[i] == lane) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Simple heuristic: penalize placements that stack tall (far from the
+  // floor at depth 0) and placements that bury empty cells behind filled
+  // ones (holes), same spirit as classic hobby Tetris bots.
+  int32_t maxDepthReached = 0;
+  int32_t holes = 0;
+  for (int16_t lane = 0; lane < static_cast<int16_t>(TetrisState::kLanes); ++lane) {
+    bool seenFilled = false;
+    for (int16_t d = static_cast<int16_t>(TetrisState::kDepth - 1); d >= 0; --d) {
+      if (occupied(d, lane)) {
+        seenFilled = true;
+        if (d > maxDepthReached) {
+          maxDepthReached = d;
+        }
+      } else if (seenFilled) {
+        ++holes;
+      }
+    }
+  }
+  return -(maxDepthReached * 2 + holes * 5);
+}
+
+void DemoPage::tetrisClearFullSlices() {
+  for (int16_t d = 0; d < static_cast<int16_t>(TetrisState::kDepth); ++d) {
+    bool full = true;
+    for (uint8_t lane = 0; lane < TetrisState::kLanes; ++lane) {
+      if (tetris_.board[d][lane] == 0) {
+        full = false;
+        break;
+      }
+    }
+    if (!full) {
+      continue;
+    }
+    for (int16_t dd = d; dd + 1 < static_cast<int16_t>(TetrisState::kDepth); ++dd) {
+      for (uint8_t lane = 0; lane < TetrisState::kLanes; ++lane) {
+        tetris_.board[dd][lane] = tetris_.board[dd + 1][lane];
+      }
+    }
+    for (uint8_t lane = 0; lane < TetrisState::kLanes; ++lane) {
+      tetris_.board[TetrisState::kDepth - 1][lane] = 0;
+    }
+    // Re-check this depth: it now holds what used to be one slice further
+    // from the floor, which might itself be full.
+    --d;
+  }
+}
+
+void DemoPage::spawnTetrisPiece() {
+  const uint8_t type = static_cast<uint8_t>(random(0, 7));
+  uint8_t bestRotation = 0;
+  int8_t bestLane = 0;
+  int32_t bestScore = 0;
+  bool found = false;
+
+  for (uint8_t rotation = 0; rotation < 4; ++rotation) {
+    for (int8_t laneOffset = -3; laneOffset < static_cast<int8_t>(TetrisState::kLanes); ++laneOffset) {
+      const int16_t landing = tetrisSimulateDrop(type, rotation, laneOffset);
+      if (landing < 0) {
+        continue;
+      }
+      const int32_t score = tetrisScorePlacement(type, rotation, laneOffset, landing);
+      if (!found || score > bestScore) {
+        found = true;
+        bestScore = score;
+        bestRotation = rotation;
+        bestLane = laneOffset;
+      }
+    }
+  }
+
+  if (!found) {
+    // Jammed near the spawn edge in every orientation: reset the board
+    // rather than freezing, so the demo stays alive indefinitely.
+    memset(tetris_.board, 0, sizeof(tetris_.board));
+    bestRotation = 0;
+    bestLane = 0;
+  }
+
+  tetris_.pieceType = type;
+  tetris_.pieceRotation = bestRotation;
+  tetris_.pieceLane = bestLane;
+  tetris_.pieceDepth = static_cast<int16_t>(TetrisState::kDepth - 1);
+  tetris_.pieceShade = GrayLevels::shade(static_cast<uint32_t>(type % 4U) + 1U, 4U);
+  tetris_.lastStepMs = millis();
+}
+
+void DemoPage::resetTetris() {
+  memset(tetris_.board, 0, sizeof(tetris_.board));
+  tetris_.lastStepMs = millis();
+  spawnTetrisPiece();
+}
+
+void DemoPage::updateTetris(uint32_t nowMs) {
+  constexpr uint32_t kStepMs = 90UL;
+  if (nowMs - tetris_.lastStepMs < kStepMs) {
+    return;
+  }
+  tetris_.lastStepMs = nowMs;
+
+  if (tetrisPlacementValid(tetris_.pieceType, tetris_.pieceRotation, tetris_.pieceLane, static_cast<int16_t>(tetris_.pieceDepth - 1))) {
+    --tetris_.pieceDepth;
+    return;
+  }
+
+  for (uint8_t i = 0; i < 4; ++i) {
+    const int16_t d = static_cast<int16_t>(tetris_.pieceDepth - kPieceShapes[tetris_.pieceType][tetris_.pieceRotation][i][0]);
+    const int16_t lane = static_cast<int16_t>(tetris_.pieceLane + kPieceShapes[tetris_.pieceType][tetris_.pieceRotation][i][1]);
+    if (d >= 0 && d < static_cast<int16_t>(TetrisState::kDepth) && lane >= 0 && lane < static_cast<int16_t>(TetrisState::kLanes)) {
+      tetris_.board[d][lane] = tetris_.pieceShade;
+    }
+  }
+  tetrisClearFullSlices();
+  spawnTetrisPiece();
+}
+
+void DemoPage::resetPongBall(float direction) {
+  pong_.ballX = 40.0f;
+  pong_.ballY = 10.0f;
+  pong_.ballVX = 1.3f * direction;
+  pong_.ballVY = (random(0, 2) == 0) ? 0.8f : -0.8f;
+}
+
+void DemoPage::resetPong() {
+  pong_.leftScore = 0;
+  pong_.rightScore = 0;
+  pong_.leftPaddleY = 8.0f;
+  pong_.rightPaddleY = 8.0f;
+  pong_.lastStepMs = millis();
+  resetPongBall(1.0f);
+}
+
+void DemoPage::updatePong(uint32_t nowMs) {
+  constexpr uint32_t kStepMs = 35UL;
+  if (nowMs - pong_.lastStepMs < kStepMs) {
+    return;
+  }
+  pong_.lastStepMs = nowMs;
+
+  constexpr float kTop = 6.0f;
+  constexpr float kBottom = 15.0f;
+  constexpr float kPaddleHeight = 4.0f;
+  constexpr float kLeftPaddleX = 3.0f;
+  constexpr float kRightPaddleX = 76.0f;
+  constexpr float kPaddleSpeed = 0.9f;
+
+  pong_.ballX += pong_.ballVX;
+  pong_.ballY += pong_.ballVY;
+
+  if (pong_.ballY <= kTop) {
+    pong_.ballY = kTop;
+    pong_.ballVY = -pong_.ballVY;
+  } else if (pong_.ballY >= kBottom) {
+    pong_.ballY = kBottom;
+    pong_.ballVY = -pong_.ballVY;
+  }
+
+  // Both paddles are AI-controlled (no input hardware exists on this
+  // device): track the ball's y with a capped speed so rallies aren't
+  // perfectly returned.
+  auto trackPaddle = [&](float& paddleY) {
+    const float target = pong_.ballY - kPaddleHeight / 2.0f;
+    if (paddleY < target) {
+      paddleY = min<float>(target, paddleY + kPaddleSpeed);
+    } else if (paddleY > target) {
+      paddleY = max<float>(target, paddleY - kPaddleSpeed);
+    }
+    paddleY = max<float>(kTop, min<float>(kBottom - kPaddleHeight, paddleY));
+  };
+  trackPaddle(pong_.leftPaddleY);
+  trackPaddle(pong_.rightPaddleY);
+
+  if (pong_.ballVX < 0.0f && pong_.ballX <= kLeftPaddleX + 2.0f && pong_.ballX >= kLeftPaddleX - 1.0f
+      && pong_.ballY >= pong_.leftPaddleY - 1.0f && pong_.ballY <= pong_.leftPaddleY + kPaddleHeight + 1.0f) {
+    pong_.ballVX = -pong_.ballVX;
+    pong_.ballX = kLeftPaddleX + 2.0f;
+  }
+  if (pong_.ballVX > 0.0f && pong_.ballX >= kRightPaddleX - 2.0f && pong_.ballX <= kRightPaddleX + 1.0f
+      && pong_.ballY >= pong_.rightPaddleY - 1.0f && pong_.ballY <= pong_.rightPaddleY + kPaddleHeight + 1.0f) {
+    pong_.ballVX = -pong_.ballVX;
+    pong_.ballX = kRightPaddleX - 2.0f;
+  }
+
+  if (pong_.ballX < 0.0f) {
+    ++pong_.rightScore;
+    resetPongBall(-1.0f);
+  } else if (pong_.ballX > 80.0f) {
+    ++pong_.leftScore;
+    resetPongBall(1.0f);
+  }
+}
+
+void DemoPage::resetFireworks(uint32_t nowMs) {
+  for (auto& rocket : fireworks_.rockets) {
+    rocket.active = false;
+  }
+  for (auto& spark : fireworks_.sparks) {
+    spark.active = false;
+  }
+  fireworks_.nextLaunchMs = nowMs;
+}
+
+void DemoPage::updateFireworks(uint32_t nowMs) {
+  constexpr float kGravity = 0.05f;
+
+  for (auto& rocket : fireworks_.rockets) {
+    if (!rocket.active) {
+      continue;
+    }
+    rocket.y += rocket.vy;
+    rocket.vy += kGravity;
+    if (rocket.vy >= 0.0f || rocket.y <= 1.0f) {
+      // Apex reached (or hit the top): burst into a share of the shared
+      // spark pool.
+      rocket.active = false;
+      constexpr uint8_t kBurstSize = 8;
+      uint8_t spawned = 0;
+      for (auto& spark : fireworks_.sparks) {
+        if (spawned >= kBurstSize) {
+          break;
+        }
+        if (spark.active) {
+          continue;
+        }
+        const float angle = static_cast<float>(random(0, 360)) * (3.14159265f / 180.0f);
+        const float speed = 0.4f + static_cast<float>(random(0, 60)) / 100.0f;
+        spark.active = true;
+        spark.x = rocket.x;
+        spark.y = rocket.y;
+        spark.vx = cosf(angle) * speed;
+        spark.vy = sinf(angle) * speed;
+        spark.bornMs = nowMs;
+        ++spawned;
+      }
+    }
+  }
+
+  for (auto& spark : fireworks_.sparks) {
+    if (!spark.active) {
+      continue;
+    }
+    if ((nowMs - spark.bornMs) >= kFireworkSparkLifetimeMs) {
+      spark.active = false;
+      continue;
+    }
+    spark.x += spark.vx;
+    spark.y += spark.vy;
+    spark.vy += kGravity * 0.5f;
+    if (spark.x < 0.0f || spark.x >= 80.0f || spark.y < 0.0f || spark.y >= 16.0f) {
+      spark.active = false;
+    }
+  }
+
+  if (nowMs >= fireworks_.nextLaunchMs) {
+    fireworks_.nextLaunchMs = nowMs + 500UL + static_cast<uint32_t>(random(0, 700));
+    for (auto& rocket : fireworks_.rockets) {
+      if (rocket.active) {
+        continue;
+      }
+      rocket.active = true;
+      rocket.x = static_cast<float>(random(10, 70));
+      rocket.y = 15.0f;
+      rocket.vy = -(1.1f + static_cast<float>(random(0, 40)) / 100.0f);
       break;
     }
   }
