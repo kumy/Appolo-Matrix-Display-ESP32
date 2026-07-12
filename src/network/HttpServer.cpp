@@ -46,14 +46,23 @@ const char kStatusPageHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
         <label class="form-check-label" for="powerSwitch">Power</label>
       </div>
       <label for="brightnessRange" class="form-label">Brightness (<span id="brightnessValue">-</span>)</label>
-      <input type="range" class="form-range" min="0" max="255" id="brightnessRange">
+      <input type="range" class="form-range" min="1" max="255" id="brightnessRange">
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Network</h6>
+      <a href="/wifi" class="btn btn-outline-secondary btn-sm">Configure WiFi</a>
     </div>
   </div>
 
   <div class="card">
     <div class="card-body">
-      <h6 class="card-subtitle mb-3 text-body-secondary">Network</h6>
-      <a href="/wifi" class="btn btn-outline-secondary btn-sm">Configure WiFi</a>
+      <h6 class="card-subtitle mb-3 text-body-secondary">Diagnostics (raw /api/status)</h6>
+      <table class="table table-sm table-borderless mb-0" style="font-size: 0.85rem;">
+        <tbody id="diagnosticsTable"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -71,9 +80,44 @@ function refresh() {
     document.getElementById('uptime').textContent = Math.round(data.uptimeMs / 1000) + 's';
     if (Date.now() > suppressUntil) {
       document.getElementById('powerSwitch').checked = data.powerOn;
-      document.getElementById('brightnessRange').value = data.brightness;
+      document.getElementById('brightnessRange').value = Math.max(1, data.brightness);
       document.getElementById('brightnessValue').textContent = data.brightness;
     }
+
+    const rateFields = ['fps', 'refreshHz', 'driverRefreshHz'];
+    const usFields = ['renderLatencyUs', 'publishLatencyUs', 'scanStepMaxUs', 'scanStepLastUs', 'waitStepLastUs', 'gpioStepLastUs', 'rearmStepLastUs'];
+    const counterFields = ['scanUnderruns', 'driverScanUnderruns', 'droppedPresents', 'droppedEvents'];
+
+    function classify(key, value) {
+      if (rateFields.indexOf(key) !== -1) {
+        if (value >= 50) return 'text-success';
+        if (value >= 20) return 'text-warning';
+        return 'text-danger';
+      }
+      if (usFields.indexOf(key) !== -1) {
+        if (value < 1000) return 'text-success';
+        if (value < 10000) return 'text-warning';
+        return 'text-danger';
+      }
+      if (counterFields.indexOf(key) !== -1) {
+        if (value < 100) return 'text-success';
+        if (value < 10000) return 'text-warning';
+        return 'text-danger';
+      }
+      if (key === 'wifiState') {
+        return value === 'connected' ? 'text-success' : 'text-warning';
+      }
+      if (key === 'timeSynced') {
+        return value ? 'text-success' : 'text-warning';
+      }
+      return '';
+    }
+
+    const rows = Object.keys(data).sort().map(function (key) {
+      const cls = classify(key, data[key]);
+      return '<tr><td class="text-body-secondary">' + key + '</td><td class="text-end ' + cls + '">' + data[key] + '</td></tr>';
+    });
+    document.getElementById('diagnosticsTable').innerHTML = rows.join('');
   }).catch(function () {});
 }
 

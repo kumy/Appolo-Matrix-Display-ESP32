@@ -42,6 +42,26 @@ class FrameBuffer4;
 // blocked and fully starved whatever else shared its core under strict
 // FreeRTOS priority scheduling (confirmed live: 0 fps on the task that
 // used to share core 1 with this one).
+//
+// Two INDEPENDENT modulation layers, not one shared one:
+//  1. Per-pixel gray level: true Bit Angle Modulation (kBamPlaneSchedule
+//     in the .cpp) with a FIXED base quantum, never touched by global
+//     brightness. Scan order is row-major/interleaved (all 4 planes for
+//     a row before moving to the next row — see advanceScanPosition()),
+//     not the plane-major order tried first (all rows for plane 0, then
+//     all rows for plane 1, ...), which spread a single row's four
+//     plane-visits across the entire refresh cycle and was suspected of
+//     contributing to a motion-smear artifact on fast-moving sprites.
+//  2. Global brightness: a nested, dithered PWM window INSIDE each
+//     already-scheduled BAM slot (see performScanStep()) — the slot's
+//     OWN duration/scheduling is never shortened for brightness, only
+//     how long output actually stays enabled within it. This was a
+//     deliberate split from an earlier design that scaled the BAM slot
+//     duration itself by brightness: that mixed two unrelated concerns
+//     (per-pixel weighting and global dimming) into one number, which
+//     is what caused dim gray levels to become extremely short,
+//     timing-sensitive pulses at low brightness settings — visible as
+//     "dim levels blink far worse than bright ones" on live hardware.
 class DisplayDriver {
 public:
   ~DisplayDriver();
@@ -103,9 +123,23 @@ private:
   uint32_t lastRefreshWindowStartedMs_ = 0;
   uint32_t currentSlotStartedUs_ = 0;
   uint32_t currentSlotDurationUs_ = 100;
-  // Precomputed by setBrightness() (gamma-corrected — see its definition)
-  // rather than recomputed from brightness_ on every single scan step.
-  uint32_t brightnessSlotDurationUs_ = 100;
+  // Precomputed by setBrightness() (gamma-corrected): the FRACTION
+  // (0.0-1.0) of each BAM slot's fixed duration that output should
+  // actually stay enabled for — the nested "second BAM" brightness
+  // layer. 1.0 means full brightness (no early blanking).
+  float globalBrightnessFraction_ = 1.0f;
+  // Error-diffusion state carried between scan steps so each PLANE's
+  // enable-window fractional microsecond gets distributed across ITS OWN
+  // future steps instead of being silently truncated (dithering —
+  // recovers brightness resolution finer than 1us that integer
+  // truncation alone would throw away). One accumulator per bit-plane
+  // (indexed by plane, 4 = kPlaneCount in the .cpp) — a single shared
+  // accumulator was an earlier bug: with the row-major/interleaved scan
+  // order, different planes take turns using it, so one plane's rounding
+  // error was bleeding into another's window, scrambling the relative
+  // brightness ordering between gray levels (confirmed live: some dimmer
+  // levels rendered brighter than nominally-brighter ones).
+  float brightnessDitherAccumulator_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   uint32_t refreshFramesThisWindow_ = 0;
   uint8_t currentRow_ = 0;
   uint8_t currentSliceIndex_ = 0;

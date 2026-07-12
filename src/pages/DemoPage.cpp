@@ -312,7 +312,7 @@ void DemoPage::draw(Renderer& renderer) {
         if (labelX < x0) {
           labelX = x0;
         }
-        renderer.drawText(labelX, 0, label, GrayLevels::kFull);
+        renderer.drawText(labelX, 0, label, level);
 
         if (index > 0) {
           renderer.drawLine(x0, 7, x0, static_cast<int16_t>(kGradientY - 1), GrayLevels::kFull);
@@ -675,6 +675,9 @@ void DemoPage::draw(Renderer& renderer) {
 
 void DemoPage::advanceScene() {
   switch (scene_) {
+    // case DemoSceneId::Grayscale: scene_ = DemoSceneId::Tetris; break;
+    // case DemoSceneId::Tetris: scene_ = DemoSceneId::Grayscale; break;
+
     case DemoSceneId::Fill: scene_ = DemoSceneId::Grayscale; break;
     case DemoSceneId::Grayscale: scene_ = DemoSceneId::Primitives; break;
     case DemoSceneId::Primitives: scene_ = DemoSceneId::Text; break;

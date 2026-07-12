@@ -28,39 +28,55 @@ constexpr uint8_t kPlaneCount = 4;
 // DisplayDriver.h's class comment for that saga).
 //
 // Measured on hardware, a single step costs ~20-50us (SPI.transfer() +
-// gptimer_get_raw_count()/gptimer_set_alarm_action() + GPIO work). These
-// constants sit comfortably above that so requested durations at
-// different brightness levels produce genuinely different real on-times
-// — see setBrightness() for why linear scaling between them still wasn't
-// enough (gamma correction) on top of this floor being real.
-// kMinSlotDurationUs=55 is the real achievable floor (measured per-step
-// cost). kBasePlaneQuantumUs=120 first tried here only gave a 55:120
-// (~46%) floor:base duty-cycle ratio — not narrow enough: even 46% duty
-// still read as visually "full" to the eye (confirmed live: 25/50/100 all
-// looked like 255). 190 widens that to ~29%, still within the refresh
-// rate (240 slots x 190us =~ 22Hz) already confirmed flicker-free live at
-// this exact value, so this isn't spending any new risk budget.
-constexpr uint16_t kBasePlaneQuantumUs = 190;
-constexpr uint16_t kMinSlotDurationUs = 55;
+// gptimer_get_raw_count()/gptimer_set_alarm_action() + GPIO work). This
+// FIXED base quantum sits comfortably above that. It is deliberately NOT
+// scaled by brightness (an earlier design did that, and it's what caused
+// dim gray levels to become extremely short, timing-sensitive pulses at
+// low brightness — see the class-level comment in DisplayDriver.h on the
+// two-layer split). Global brightness is applied as a nested PWM window
+// inside each slot instead — see performScanStep(). 40 was chosen over a
+// larger value (100 was tried) specifically for refresh rate: at 100,
+// refreshHz dropped to ~40Hz and visible flicker returned at ALL
+// brightness levels (confirmed live) — refresh rate and nested-PWM
+// resolution pull in opposite directions here (bigger quantum = more
+// microseconds to resolve brightness with, but proportionally fewer
+// refreshes/sec), and flicker is the more fundamental defect of the two.
+// 40 matches the value already confirmed flicker-free live (~90Hz). The
+// remaining low-brightness precision loss this trades away needs a
+// different fix than "make the quantum bigger" — see class comment.
+constexpr uint16_t kBasePlaneQuantumUs = 40;
+// Minimum nested-brightness-PWM pulse width treated as reliably visible
+// — see performScanStep()'s two-branch windowing. A conservative,
+// untuned starting point (a handful of busy-wait loop iterations' worth
+// of margin above the check overhead itself); may need live tuning.
+constexpr uint32_t kMinEffectiveEnableUs = 3;
 // Human brightness perception is roughly logarithmic, not linear with
 // duty cycle — a linear PWM mapping spends most of its input range in the
-// perceptually-saturated "looks full" zone. Gamma correction concentrates
-// the visible dimming into the range that actually looks dim. Applied as
-// an interpolation FRACTION across [kMinSlotDurationUs,
-// kBasePlaneQuantumUs] in setBrightness(), not as a multiplier against
-// kBasePlaneQuantumUs alone — the latter was the earlier bug: a
-// gamma-shrunk value still under the real floor just clamps straight back
-// to kMinSlotDurationUs, silently discarding the gamma shaping for most
-// of the brightness range. 2.5 is a common starting point for LED PWM
-// (sRGB-style displays typically use ~2.2).
+// perceptually-saturated "looks full" zone (confirmed live: 25/50/100
+// all looked like 255 under a linear mapping). Gamma correction
+// concentrates the visible dimming into the range that actually looks
+// dim. 2.5 is a common starting point for LED PWM (sRGB-style displays
+// typically use ~2.2).
 constexpr float kBrightnessGamma = 2.5f;
-constexpr uint8_t kBamSliceCount = 15;
-constexpr uint8_t kBamPlaneSchedule[kBamSliceCount] = {
-  3, 2, 3, 1,
-  3, 2, 3, 0,
-  3, 2, 3, 1,
-  3, 2, 3,
-};
+// True Bit Angle Modulation: one slot per bit-plane per row, with slot
+// DURATION weighted 1:2:4:8 by plane — not repetition-based BCM (the
+// design tried first used kPlaneCount*uniform-duration slots repeated at
+// different FREQUENCIES: plane 3 appearing 8x in a 15-slot schedule,
+// plane 0 only once, to fake the same weighting). That repetition scheme
+// meant the dimmest plane (weight 1, the only bit lit for the faintest
+// visible gray level) showed up as a single, sparse pulse per full
+// refresh cycle — clearly visible as a "blink" distinct from brighter,
+// more-frequently-repeated planes, especially at refresh rates well
+// below the ~200-400Hz where classic BCM shimmer stops being perceptible
+// (confirmed live: dim levels blinking worse than bright ones). True BAM
+// gives every plane exactly ONE slot per cycle (same visit frequency for
+// all gray levels), and cuts total per-frame row-visits from
+// kPlaneCount*(sum of old repeat counts) down to just kPlaneCount*rows —
+// here 4x16=64 instead of 15x16=240 — which directly buys back
+// refresh-rate headroom by paying the fixed per-step transfer overhead
+// far fewer times per frame.
+constexpr uint8_t kBamSliceCount = kPlaneCount;
+constexpr uint8_t kBamPlaneSchedule[kBamSliceCount] = {0, 1, 2, 3};
 
 // Expands GrayLevels::kLevels (the small, hand-written canonical palette)
 // into a direct-index table covering all 16 raw 4-bit pixel values, so the
@@ -215,17 +231,12 @@ void DisplayDriver::setPower(bool enabled) {
 
 void DisplayDriver::setBrightness(uint8_t brightness) {
   brightness_ = brightness;
-  if (brightness_ == 0) {
-    brightnessSlotDurationUs_ = 0;
-    return;
-  }
-  // Interpolate the gamma-shaped fraction ACROSS the achievable range,
-  // not as a multiplier against kBasePlaneQuantumUs alone — every nonzero
-  // brightness lands somewhere in [kMinSlotDurationUs, kBasePlaneQuantumUs]
-  // instead of most of the range clamping to the same floor value.
-  const float normalized = powf(static_cast<float>(brightness_) / 255.0f, kBrightnessGamma);
-  const float range = static_cast<float>(kBasePlaneQuantumUs - kMinSlotDurationUs);
-  brightnessSlotDurationUs_ = static_cast<uint32_t>(kMinSlotDurationUs) + static_cast<uint32_t>(normalized * range);
+  // The "second BAM": how much of each (fixed-duration, never-scaled)
+  // per-pixel BAM slot output should actually stay enabled for. Gamma
+  // correction here — not a linear brightness/255 fraction — for the
+  // same reason as the per-pixel palette: a linear duty-cycle fraction
+  // spends most of its input range looking "full" to the eye.
+  globalBrightnessFraction_ = powf(static_cast<float>(brightness_) / 255.0f, kBrightnessGamma);
 }
 
 void DisplayDriver::present(const FrameBuffer4& frame) {
@@ -314,6 +325,11 @@ void DisplayDriver::performScanStep() {
   currentSlotStartedUs_ = nowMicros;
   const uint32_t stepStartedUs = micros();
 
+  // True BAM slot duration: FIXED, weighted by plane, never scaled by
+  // brightness — see the class-level comment on the two-layer split.
+  const uint8_t planeIndex = kBamPlaneSchedule[currentSliceIndex_];
+  currentSlotDurationUs_ = static_cast<uint32_t>(kBasePlaneQuantumUs) << planeIndex;
+
   blankOutput();
 
   setRowAddress(currentRow_);
@@ -324,15 +340,62 @@ void DisplayDriver::performScanStep() {
 
   const uint32_t gpioStartedUs = micros();
   latchRow();
-  // brightness_==0 stays blanked here rather than emitting the shortest
-  // achievable pulse (~kMinSlotDurationUs, bounded by real per-step cost,
-  // not by this constant) — otherwise "0" was still visibly, if dimly, lit.
+  // brightness_==0 stays blanked here rather than briefly enabling output
+  // just to immediately re-blank it below — a true off, not the shortest
+  // achievable pulse.
   if (brightness_ > 0) {
     enableOutput();
+    if (globalBrightnessFraction_ < 0.999f) {
+      // Second BAM layer: global brightness as a dithered PWM window
+      // INSIDE this already-scheduled, fixed-duration slot, independent
+      // of the per-pixel gray-level weighting above.
+      const float idealWindowUs = static_cast<float>(currentSlotDurationUs_) * globalBrightnessFraction_;
+      float& ditherAccumulator = brightnessDitherAccumulator_[planeIndex];
+      uint32_t enableWindowUs;
+      if (idealWindowUs >= static_cast<float>(kMinEffectiveEnableUs)) {
+        // Already above the minimum reliably-visible pulse width (see
+        // kMinEffectiveEnableUs) — dither only the fractional remainder,
+        // recovering sub-microsecond resolution that truncating to an
+        // integer window each step alone would throw away.
+        float flooredWindowUs = floorf(idealWindowUs);
+        ditherAccumulator += (idealWindowUs - flooredWindowUs);
+        if (ditherAccumulator >= 1.0f) {
+          ditherAccumulator -= 1.0f;
+          flooredWindowUs += 1.0f;
+        }
+        enableWindowUs = static_cast<uint32_t>(flooredWindowUs);
+      } else {
+        // Below the minimum-effective threshold: shrinking the pulse
+        // further isn't reliable (confirmed live: adjacent gray levels
+        // became indistinguishable/non-monotonic once their nested
+        // windows dropped to a few microseconds or less — either the
+        // LED/driver's own rise time or the busy-wait loop's own check
+        // overhead stops resolving differences that small). Instead of
+        // an ever-shorter pulse, emit a full-width, reliably-effective
+        // kMinEffectiveEnableUs pulse only as OFTEN as needed to match
+        // the target average — frequency-domain dithering instead of
+        // duration-domain truncation.
+        ditherAccumulator += idealWindowUs / static_cast<float>(kMinEffectiveEnableUs);
+        if (ditherAccumulator >= 1.0f) {
+          ditherAccumulator -= 1.0f;
+          enableWindowUs = kMinEffectiveEnableUs;
+        } else {
+          enableWindowUs = 0;
+        }
+      }
+      if (enableWindowUs > 0) {
+        const uint32_t enableStartedUs = micros();
+        while ((micros() - enableStartedUs) < enableWindowUs) {
+          // Busy-wait: core 1 is dedicated to this task (see
+          // Application.h), so there's nothing else this could be
+          // starving, and a real timer for a window this short would
+          // cost more in scheduling overhead than the window itself.
+        }
+      }
+      blankOutput();
+    }
   }
   stats_.gpioStepLastUs = micros() - gpioStartedUs;
-
-  currentSlotDurationUs_ = brightness_ == 0 ? kMinSlotDurationUs : brightnessSlotDurationUs_;
 
   advanceScanPosition();
 
@@ -423,9 +486,22 @@ void DisplayDriver::buildScanPlanes(const FrameBuffer4& frame, uint8_t* destinat
 }
 
 void DisplayDriver::advanceScanPosition() {
-  ++currentRow_;
-  if (currentRow_ >= config_.height) {
-    currentRow_ = 0;
-    currentSliceIndex_ = static_cast<uint8_t>((currentSliceIndex_ + 1U) % kBamSliceCount);
+  // Row-major/interleaved: cycle through all kBamSliceCount planes for
+  // the CURRENT row before moving to the next row, rather than the
+  // plane-major order this replaced (all rows for plane 0, then all rows
+  // for plane 1, ...). Plane-major spread a single row's four
+  // plane-visits across the entire refresh cycle (e.g. row 0's plane-3
+  // visit could be ~48 steps / most of a cycle later than its plane-0
+  // visit); row-major resolves a row's complete weighted brightness in
+  // one tight, consecutive burst instead, which is the more standard
+  // BAM/BCM order and was suspected of contributing to the motion-smear
+  // artifact reported on fast-moving sprites.
+  ++currentSliceIndex_;
+  if (currentSliceIndex_ >= kBamSliceCount) {
+    currentSliceIndex_ = 0;
+    ++currentRow_;
+    if (currentRow_ >= config_.height) {
+      currentRow_ = 0;
+    }
   }
 }
