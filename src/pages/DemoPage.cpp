@@ -195,6 +195,14 @@ uint8_t breathingShade(uint32_t elapsedMs, uint32_t periodMs) {
 
 DemoPage::DemoPage(ClockService& clock, RuntimeStats& stats) : clock_(clock), stats_(stats) {}
 
+void DemoPage::setAnimationSpeedPercent(uint16_t percent) {
+  animationSpeedPercent_ = percent < 1U ? 1U : percent;
+}
+
+uint32_t DemoPage::scaleMs(uint32_t ms) const {
+  return static_cast<uint32_t>((static_cast<uint64_t>(ms) * animationSpeedPercent_) / 100ULL);
+}
+
 void DemoPage::enter() {
   sceneStartedAtMs_ = millis();
   resetSceneState(sceneStartedAtMs_);
@@ -203,8 +211,8 @@ void DemoPage::enter() {
 void DemoPage::update(uint32_t nowMs) {
   if ((nowMs - sceneStartedAtMs_) >= sceneDurationMs()) {
     sceneStartedAtMs_ = nowMs;
-    // advanceScene();
-    // resetSceneState(nowMs);
+    advanceScene();
+    resetSceneState(nowMs);
   }
 
   switch (scene_) {
@@ -274,7 +282,11 @@ void DemoPage::resetSceneState(uint32_t nowMs) {
 void DemoPage::draw(Renderer& renderer) {
   renderer.clear(0);
   const uint32_t nowMs = millis();
-  const uint32_t elapsed = nowMs - sceneStartedAtMs_;
+  // Single scaling point: every scene's continuous motion (pingPong,
+  // modulo-cycle scrolling, etc.) reads elapsed time from this one
+  // variable, so scaling it here speeds up/slows down all of them
+  // together without touching individual scene code.
+  const uint32_t elapsed = scaleMs(nowMs - sceneStartedAtMs_);
 
   switch (scene_) {
     case DemoSceneId::Fill: {
@@ -332,14 +344,18 @@ void DemoPage::draw(Renderer& renderer) {
     case DemoSceneId::MultilineText: {
       // Text is taller than the 16px display, so it scrolls upward from
       // below the bottom edge to above the top edge, then loops — letting
-      // every line become readable in turn. FrameBuffer4's own per-pixel
+      // every line become readable in turn. FrameBuffer5's own per-pixel
       // bounds check does the vertical clipping, so no maxHeight is set.
       static const String kMessage("LINE1\nLINE2\nLINE3\nLINE4\nDONE");
       constexpr int16_t kLineHeightPx = 7;  // Renderer glyph height(6) + lineSpacing(1)
       constexpr int16_t kLineCount = 5;
       constexpr int16_t kTextHeight = kLineHeightPx * kLineCount;
       constexpr int16_t kScrollSpan = kTextHeight + 16;
-      constexpr uint32_t kMsPerPixel = 140UL;
+      // 41ms/px (~24Hz) rather than the original 140ms (~7Hz) — content
+      // updates below ~24Hz read as visibly juddery/blurred to the eye
+      // (the renderer only places text at integer pixel positions, no
+      // sub-pixel blending, so update FREQUENCY is the only lever here).
+      constexpr uint32_t kMsPerPixel = 41UL;
 
       const int16_t travel = static_cast<int16_t>((elapsed / kMsPerPixel) % static_cast<uint32_t>(kScrollSpan));
       const int16_t y = static_cast<int16_t>(16 - travel);
@@ -469,7 +485,10 @@ void DemoPage::draw(Renderer& renderer) {
       static const String kMessage("MATRIX DISPLAY 2026 -- ");
       constexpr int16_t kCharPitch = 4;
       const int16_t textWidth = static_cast<int16_t>(kMessage.length() * kCharPitch);
-      constexpr uint32_t kMsPerPixel = 60UL;
+      // 41ms/px (~24Hz) rather than the original 60ms (~17Hz) — see the
+      // MultilineText scene's comment on why frequency is the only lever
+      // available for integer-pixel-positioned text.
+      constexpr uint32_t kMsPerPixel = 41UL;
       const int16_t cycle = static_cast<int16_t>(textWidth + 80);
       const int16_t travel = static_cast<int16_t>((elapsed / kMsPerPixel) % static_cast<uint32_t>(cycle));
       const int16_t x = static_cast<int16_t>(80 - travel);
@@ -554,7 +573,10 @@ void DemoPage::draw(Renderer& renderer) {
       constexpr int16_t kDescendMax = 3;
       constexpr uint32_t kDescendCycleMs = 10000UL;
 
-      const int16_t originX = pingPong(elapsed, 90UL, 0, kMarchSpan);
+      // 41ms (~24Hz) rather than the original 90ms (~11Hz) — see the
+      // MultilineText scene's comment on why update frequency is the
+      // lever for motion smoothness here.
+      const int16_t originX = pingPong(elapsed, 41UL, 0, kMarchSpan);
       const uint32_t descendPhase = elapsed % kDescendCycleMs;
       const int16_t originY = static_cast<int16_t>((static_cast<uint32_t>(kDescendMax) * descendPhase) / kDescendCycleMs);
       const uint8_t walkFrame = static_cast<uint8_t>((elapsed / 400UL) % 2UL);
@@ -678,7 +700,8 @@ void DemoPage::advanceScene() {
     case DemoSceneId::Grayscale: scene_ = DemoSceneId::Transition; break;
     case DemoSceneId::Transition: scene_ = DemoSceneId::Tetris; break;
     case DemoSceneId::Tetris: scene_ = DemoSceneId::Checkerboard; break;
-    case DemoSceneId::Checkerboard: scene_ = DemoSceneId::Grayscale; break;
+    case DemoSceneId::Checkerboard: scene_ = DemoSceneId::Marquee; break;
+    case DemoSceneId::Marquee: scene_ = DemoSceneId::Grayscale; break;
 
     // case DemoSceneId::Fill: scene_ = DemoSceneId::Grayscale; break;
     // case DemoSceneId::Grayscale: scene_ = DemoSceneId::Primitives; break;
@@ -739,8 +762,11 @@ void DemoPage::resetSnake() {
 }
 
 void DemoPage::updateSnake(uint32_t nowMs) {
-  constexpr uint32_t kStepIntervalMs = 140UL;
-  if (nowMs - snake_.lastStepMs < kStepIntervalMs) {
+  // 41ms (~24Hz) rather than the original 140ms (~7Hz) — see the
+  // MultilineText scene's comment on why update frequency is the lever
+  // for motion smoothness here.
+  constexpr uint32_t kStepIntervalMs = 41UL;
+  if (scaleMs(nowMs - snake_.lastStepMs) < kStepIntervalMs) {
     return;
   }
   snake_.lastStepMs = nowMs;
@@ -984,8 +1010,11 @@ void DemoPage::resetTetris() {
 }
 
 void DemoPage::updateTetris(uint32_t nowMs) {
-  constexpr uint32_t kStepMs = 90UL;
-  if (nowMs - tetris_.lastStepMs < kStepMs) {
+  // 41ms (~24Hz) rather than the original 90ms (~11Hz) — see the
+  // MultilineText scene's comment on why update frequency is the lever
+  // for motion smoothness here; falls proportionally faster as a result.
+  constexpr uint32_t kStepMs = 41UL;
+  if (scaleMs(nowMs - tetris_.lastStepMs) < kStepMs) {
     return;
   }
   tetris_.lastStepMs = nowMs;
@@ -1024,7 +1053,7 @@ void DemoPage::resetPong() {
 
 void DemoPage::updatePong(uint32_t nowMs) {
   constexpr uint32_t kStepMs = 35UL;
-  if (nowMs - pong_.lastStepMs < kStepMs) {
+  if (scaleMs(nowMs - pong_.lastStepMs) < kStepMs) {
     return;
   }
   pong_.lastStepMs = nowMs;

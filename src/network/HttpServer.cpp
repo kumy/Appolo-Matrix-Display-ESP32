@@ -4,6 +4,7 @@
 
 #include "display/DisplayDriver.h"
 #include "network/WifiManager.h"
+#include "pages/DemoPage.h"
 #include "storage/Settings.h"
 #include "time/ClockService.h"
 #include "util/Logger.h"
@@ -47,6 +48,12 @@ const char kStatusPageHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
       </div>
       <label for="brightnessRange" class="form-label">Brightness (<span id="brightnessValue">-</span>)</label>
       <input type="range" class="form-range" min="1" max="255" id="brightnessRange">
+
+      <label for="paletteRange" class="form-label mt-2">Gray levels (<span id="paletteValue">-</span>)</label>
+      <input type="range" class="form-range" min="2" max="32" id="paletteRange">
+
+      <label for="speedRange" class="form-label mt-2">Animation speed (<span id="speedValue">-</span>%)</label>
+      <input type="range" class="form-range" min="10" max="400" id="speedRange">
     </div>
   </div>
 
@@ -82,6 +89,10 @@ function refresh() {
       document.getElementById('powerSwitch').checked = data.powerOn;
       document.getElementById('brightnessRange').value = Math.max(1, data.brightness);
       document.getElementById('brightnessValue').textContent = data.brightness;
+      document.getElementById('paletteRange').value = data.paletteLevelCount;
+      document.getElementById('paletteValue').textContent = data.paletteLevelCount;
+      document.getElementById('speedRange').value = data.animationSpeedPercent;
+      document.getElementById('speedValue').textContent = data.animationSpeedPercent;
     }
 
     const rateFields = ['fps', 'refreshHz', 'driverRefreshHz'];
@@ -139,6 +150,18 @@ document.getElementById('brightnessRange').addEventListener('input', function (e
 document.getElementById('brightnessRange').addEventListener('change', function (e) {
   pushSettings({brightness: parseInt(e.target.value, 10)});
 });
+document.getElementById('paletteRange').addEventListener('input', function (e) {
+  document.getElementById('paletteValue').textContent = e.target.value;
+});
+document.getElementById('paletteRange').addEventListener('change', function (e) {
+  pushSettings({paletteLevelCount: parseInt(e.target.value, 10)});
+});
+document.getElementById('speedRange').addEventListener('input', function (e) {
+  document.getElementById('speedValue').textContent = e.target.value;
+});
+document.getElementById('speedRange').addEventListener('change', function (e) {
+  pushSettings({animationSpeedPercent: parseInt(e.target.value, 10)});
+});
 
 refresh();
 setInterval(refresh, 5000);
@@ -149,8 +172,8 @@ setInterval(refresh, 5000);
 )HTML";
 }
 
-HttpServer::HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats)
-    : settings_(settings), wifi_(wifi), display_(display), clock_(clock), stats_(stats) {}
+HttpServer::HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats, DemoPage& demoPage)
+    : settings_(settings), wifi_(wifi), display_(display), clock_(clock), stats_(stats), demoPage_(demoPage) {}
 
 void HttpServer::begin() {
   setupApiRoutes();
@@ -189,6 +212,8 @@ void HttpServer::setupApiRoutes() {
     doc["ip"] = wifi_.localIp().toString();
     doc["brightness"] = settings_.values().brightness;
     doc["powerOn"] = settings_.values().powerOn;
+    doc["paletteLevelCount"] = settings_.values().paletteLevelCount;
+    doc["animationSpeedPercent"] = settings_.values().animationSpeedPercent;
     doc["fps"] = stats_.appFps;
     doc["refreshHz"] = stats_.refreshHz;
     doc["scanUnderruns"] = stats_.scanUnderruns;
@@ -229,6 +254,16 @@ void HttpServer::setupApiRoutes() {
       const bool powerOn = body["powerOn"].as<bool>();
       settings_.setPowerOn(powerOn);
       display_.setPower(powerOn);
+    }
+    if (body["paletteLevelCount"].is<int>()) {
+      const uint8_t count = static_cast<uint8_t>(constrain(body["paletteLevelCount"].as<int>(), 2, 32));
+      settings_.setPaletteLevelCount(count);
+      display_.setPaletteLevelCount(count);
+    }
+    if (body["animationSpeedPercent"].is<int>()) {
+      const uint16_t percent = static_cast<uint16_t>(constrain(body["animationSpeedPercent"].as<int>(), 10, 400));
+      settings_.setAnimationSpeedPercent(percent);
+      demoPage_.setAnimationSpeedPercent(percent);
     }
     request->send(200, "application/json", "{\"ok\":true}");
   });

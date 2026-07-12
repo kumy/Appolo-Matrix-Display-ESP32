@@ -39,7 +39,17 @@ public:
   void update(uint32_t nowMs) override;
   void draw(Renderer& renderer) override;
 
+  // Live-adjustable multiplier on scene animation timing (100 = normal
+  // speed, 200 = 2x, 50 = half). Applied to the elapsed-time values used
+  // throughout draw() (continuous motion: pingPong/modulo-cycle scenes)
+  // and to the step-gate checks in updateSnake()/updateTetris()/
+  // updatePong() (discrete step timers) — see their call sites for how.
+  void setAnimationSpeedPercent(uint16_t percent);
+
 private:
+  uint32_t scaleMs(uint32_t ms) const;
+
+
   void advanceScene();
   uint32_t sceneDurationMs() const;
   void resetSceneState(uint32_t nowMs);
@@ -70,6 +80,7 @@ private:
   RuntimeStats& stats_;
   DemoSceneId scene_ = DemoSceneId::Grayscale;
   uint32_t sceneStartedAtMs_ = 0;
+  uint16_t animationSpeedPercent_ = 100;
 
   // Autonomous snake: no input hardware exists on this device, so it plays
   // itself (greedy pathing toward food, self-collision avoidance, respawns

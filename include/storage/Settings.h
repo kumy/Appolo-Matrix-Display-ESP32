@@ -13,6 +13,13 @@ struct DeviceSettings {
   String wifiPassword = "";
   String ntpServer = "pool.ntp.org";
   int16_t utcOffsetMinutes = 0;
+  // Number of evenly-spaced steps (out of the 32 raw hardware levels)
+  // actually used for gray-level quantization — see
+  // DisplayDriver::setPaletteLevelCount(). 32 = full hardware resolution.
+  uint8_t paletteLevelCount = 32;
+  // Percent of normal speed for DemoPage's scene animations (100 =
+  // unchanged, 200 = 2x, 50 = half) — see DemoPage::setAnimationSpeed().
+  uint16_t animationSpeedPercent = 100;
 };
 
 // Backed by NVS via the Preferences API (namespace "settings"). Every
@@ -27,6 +34,8 @@ public:
   void setBrightness(uint8_t brightness);
   void setPowerOn(bool powerOn);
   void setWifiCredentials(const String& ssid, const String& password);
+  void setPaletteLevelCount(uint8_t count);
+  void setAnimationSpeedPercent(uint16_t percent);
 
 private:
   void load();

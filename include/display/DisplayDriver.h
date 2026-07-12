@@ -11,7 +11,7 @@
 #include "core/RuntimeStats.h"
 #include "display/DisplayConfig.h"
 
-class FrameBuffer4;
+class FrameBuffer5;
 
 // Scan timing is driven by a self-managed gptimer, whose ISR does nothing
 // but wake a dedicated FreeRTOS task, which then runs performScanStep() —
@@ -84,7 +84,12 @@ public:
   bool begin(const DisplayConfig& config);
   void setPower(bool enabled);
   void setBrightness(uint8_t brightness);
-  void present(const FrameBuffer4& frame);
+  // Live-adjustable gradient resolution: snaps every pixel's raw 0-31
+  // value to the nearest of `count` evenly-spaced steps before scanning
+  // (2-32; 32 is full hardware resolution, unquantized). See
+  // rebuildGrayLevelLut().
+  void setPaletteLevelCount(uint8_t count);
+  void present(const FrameBuffer5& frame);
   const RuntimeStats& stats() const;
   bool powerEnabled() const;
   uint8_t brightness() const;
@@ -96,11 +101,13 @@ private:
   void scanTaskLoop();
   void performScanStep();
   void transferCurrentRow();
+  void rebuildGrayLevelLut();
+  uint8_t quantizeGrayLevel(uint8_t raw) const;
   void blankOutput();
   void enableOutput();
   void setRowAddress(uint8_t row);
   void latchRow();
-  void buildScanPlanes(const FrameBuffer4& frame, uint8_t* destination);
+  void buildScanPlanes(const FrameBuffer5& frame, uint8_t* destination);
   void advanceScanPosition();
 
   DisplayConfig config_;
@@ -128,6 +135,14 @@ private:
   TaskHandle_t scanTaskHandle_ = nullptr;
 
   uint8_t* transferRowBuffer_ = nullptr;
+
+  // Runtime gray-level quantization table (raw 0-31 -> nearest active
+  // step), rebuilt by rebuildGrayLevelLut() whenever paletteLevelCount_
+  // changes via setPaletteLevelCount(). 32 entries matches kRawLevelCount
+  // in the .cpp (5 bit-planes) — sized directly rather than derived here
+  // since kPlaneCount is a .cpp-local implementation detail.
+  uint8_t grayLevelLut_[32] = {};
+  uint8_t paletteLevelCount_ = 32;
 
   uint8_t* scanBuffers_[2] = {nullptr, nullptr};
   size_t rowBytes_ = 0;

@@ -8,7 +8,7 @@
 #include "core/EventBus.h"
 #include "core/RuntimeStats.h"
 #include "display/DisplayDriver.h"
-#include "display/FrameBuffer4.h"
+#include "display/FrameBuffer5.h"
 #include "display/Renderer.h"
 #include "network/HttpServer.h"
 #include "network/MqttClient.h"
@@ -48,7 +48,7 @@ private:
 
   static constexpr uint16_t kWidth = 80;
   static constexpr uint16_t kHeight = 16;
-  static constexpr size_t kBufferSize = FrameBuffer4::bytesFor(kWidth, kHeight);
+  static constexpr size_t kBufferSize = FrameBuffer5::bytesFor(kWidth, kHeight);
 
   RuntimeStats stats_;
   EventBus<16> eventBus_;
@@ -62,8 +62,8 @@ private:
   Renderer renderer_;
   uint8_t frontStorage_[kBufferSize] = {0};
   uint8_t backStorage_[kBufferSize] = {0};
-  FrameBuffer4 frontBuffer_;
-  FrameBuffer4 backBuffer_;
+  FrameBuffer5 frontBuffer_;
+  FrameBuffer5 backBuffer_;
   DemoPage demoPage_;
   DiagnosticsPage diagnosticsPage_;
   TextPage textPage_;

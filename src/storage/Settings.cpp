@@ -31,6 +31,8 @@ void Settings::load() {
   settings_.wifiPassword = prefs.getString("wifiPass", settings_.wifiPassword);
   settings_.ntpServer = prefs.getString("ntpServer", settings_.ntpServer);
   settings_.utcOffsetMinutes = prefs.getShort("utcOffset", settings_.utcOffsetMinutes);
+  settings_.paletteLevelCount = prefs.getUChar("paletteLvls", settings_.paletteLevelCount);
+  settings_.animationSpeedPercent = prefs.getUShort("animSpeed", settings_.animationSpeedPercent);
   prefs.end();
 }
 
@@ -44,6 +46,8 @@ void Settings::save() const {
   prefs.putString("wifiPass", settings_.wifiPassword);
   prefs.putString("ntpServer", settings_.ntpServer);
   prefs.putShort("utcOffset", settings_.utcOffsetMinutes);
+  prefs.putUChar("paletteLvls", settings_.paletteLevelCount);
+  prefs.putUShort("animSpeed", settings_.animationSpeedPercent);
   prefs.end();
 }
 
@@ -64,5 +68,15 @@ void Settings::setPowerOn(bool powerOn) {
 void Settings::setWifiCredentials(const String& ssid, const String& password) {
   settings_.wifiSsid = ssid;
   settings_.wifiPassword = password;
+  save();
+}
+
+void Settings::setPaletteLevelCount(uint8_t count) {
+  settings_.paletteLevelCount = count;
+  save();
+}
+
+void Settings::setAnimationSpeedPercent(uint16_t percent) {
+  settings_.animationSpeedPercent = percent;
   save();
 }

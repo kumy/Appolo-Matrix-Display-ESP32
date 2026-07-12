@@ -1,18 +1,29 @@
 #include "display/DisplayDriver.h"
 
 #include <SPI.h>
-#include <array>
 #include <cmath>
 #include <cstring>
 
 #include <driver/gpio.h>
 
-#include "display/FrameBuffer4.h"
+#include "display/FrameBuffer5.h"
 #include "display/GrayLevels.h"
 #include "util/Logger.h"
 
 namespace {
-constexpr uint8_t kPlaneCount = 4;
+// 5 bit-planes (32 raw levels, 0-31) — raised from 4 (16 levels)
+// specifically to get more usable grayscale/dimming resolution. Each
+// added plane roughly DOUBLES total scan time per frame (true BAM's
+// per-plane weight is 2^planeIndex, so total weighted time per row is
+// 2^kPlaneCount - 1 quanta) — this is a hard property of weighted binary
+// PWM, not a tuning knob, so bit depth and refresh rate trade off
+// directly. 5 was chosen as the balance: ~2x the 4-bit design's total
+// scan time, refresh still comfortably fast. A frame-to-frame temporal
+// dithering layer was tried on top of this (in buildScanPlanes()) to
+// recover resolution beyond these 32 raw levels for brightness scaling,
+// but was reverted — see buildScanPlanes()'s comment — it reintroduced
+// flicker via low-frequency alternation between adjacent levels.
+constexpr uint8_t kPlaneCount = 5;
 // Two earlier attempts at the raw ESP-IDF spi_master transaction API
 // (queued+polled, then blocking spi_device_transmit()) both carried
 // ~40-85us of fixed per-transaction overhead for this transfer size
@@ -63,30 +74,8 @@ constexpr float kBrightnessGamma = 2.5f;
 // refresh-rate headroom by paying the fixed per-step transfer overhead
 // far fewer times per frame.
 constexpr uint8_t kBamSliceCount = kPlaneCount;
-constexpr uint8_t kBamPlaneSchedule[kBamSliceCount] = {0, 1, 2, 3};
-
-// Expands GrayLevels::kLevels (the small, hand-written canonical palette)
-// into a direct-index table covering all 16 raw 4-bit pixel values, so the
-// per-pixel hot path in buildScanPlanes() stays an O(1) array lookup. Built
-// at compile time from GrayLevels::kLevels alone via GrayLevels::nearest()
-// (the same nearest-match logic pages use for procedural shading), so
-// growing or shrinking the palette there is sufficient, nothing here needs
-// to change. By construction every canonical value maps to itself (its own
-// distance is always the unique minimum of 0), so the palette values are
-// always stable fixed points of this table.
-constexpr std::array<uint8_t, 16> buildGrayLevelLut() {
-  std::array<uint8_t, 16> table{};
-  for (uint16_t raw = 0; raw < 16; ++raw) {
-    table[raw] = GrayLevels::nearest(static_cast<uint8_t>(raw));
-  }
-  return table;
-}
-
-constexpr std::array<uint8_t, 16> kGrayLevelLut = buildGrayLevelLut();
-
-uint8_t quantizeGrayLevel(uint8_t level) {
-  return kGrayLevelLut[level];
-}
+constexpr uint8_t kBamPlaneSchedule[kBamSliceCount] = {0, 1, 2, 3, 4};
+constexpr uint16_t kRawLevelCount = 1U << kPlaneCount;  // 32 for 5 planes
 }
 
 DisplayDriver::~DisplayDriver() {
@@ -105,6 +94,7 @@ DisplayDriver::~DisplayDriver() {
 
 bool DisplayDriver::begin(const DisplayConfig& config) {
   config_ = config;
+  rebuildGrayLevelLut();
 
   rowBytes_ = (static_cast<size_t>(config_.width) + 7U) / 8U;
   planeBytes_ = rowBytes_ * static_cast<size_t>(config_.height);
@@ -227,7 +217,44 @@ void DisplayDriver::setBrightness(uint8_t brightness) {
   brightnessScale_ = powf(static_cast<float>(brightness_) / 255.0f, kBrightnessGamma);
 }
 
-void DisplayDriver::present(const FrameBuffer4& frame) {
+void DisplayDriver::setPaletteLevelCount(uint8_t count) {
+  if (count < 2U) {
+    count = 2U;
+  } else if (count > kRawLevelCount) {
+    count = static_cast<uint8_t>(kRawLevelCount);
+  }
+  paletteLevelCount_ = count;
+  rebuildGrayLevelLut();
+}
+
+void DisplayDriver::rebuildGrayLevelLut() {
+  // Snaps every raw 0-(kRawLevelCount-1) value to the nearest of
+  // paletteLevelCount_ evenly-spaced steps spanning the full hardware
+  // range — a live "posterize" control over the gray gradient,
+  // independent of GrayLevels::kLevels (which stays the full,
+  // unconstrained hardware palette; procedural shading via
+  // GrayLevels::shade()/nearest() is unaffected by this setting).
+  for (uint16_t raw = 0; raw < kRawLevelCount; ++raw) {
+    uint8_t best = 0;
+    uint16_t bestDist = 0xFFFFU;
+    for (uint8_t i = 0; i < paletteLevelCount_; ++i) {
+      const uint8_t candidate = static_cast<uint8_t>(
+          (static_cast<uint32_t>(kRawLevelCount - 1) * i) / (paletteLevelCount_ - 1));
+      const uint16_t dist = raw > candidate ? static_cast<uint16_t>(raw - candidate) : static_cast<uint16_t>(candidate - raw);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = candidate;
+      }
+    }
+    grayLevelLut_[raw] = best;
+  }
+}
+
+uint8_t DisplayDriver::quantizeGrayLevel(uint8_t raw) const {
+  return grayLevelLut_[raw];
+}
+
+void DisplayDriver::present(const FrameBuffer5& frame) {
   int8_t stagedBufferIndex = 0;
   portENTER_CRITICAL(&scanMux_);
   stagedBufferIndex = activeScanBufferIndex_ == 0 ? 1 : 0;
@@ -398,7 +425,7 @@ void DisplayDriver::latchRow() {
   gpio_set_level(static_cast<gpio_num_t>(config_.pinLatch), 0);
 }
 
-void DisplayDriver::buildScanPlanes(const FrameBuffer4& frame, uint8_t* destination) {
+void DisplayDriver::buildScanPlanes(const FrameBuffer5& frame, uint8_t* destination) {
   memset(destination, 0, scanBufferBytes_);
   // Global brightness applied here, in software, before quantization —
   // see the class-level comment for why (flicker/precision problems with
@@ -407,17 +434,29 @@ void DisplayDriver::buildScanPlanes(const FrameBuffer4& frame, uint8_t* destinat
   // cost to doing float math per pixel here.
   for (uint16_t y = 0; y < config_.height; ++y) {
     for (uint16_t x = 0; x < config_.width; ++x) {
-      const uint8_t raw = frame.getPixel(x, y) & 0x0FU;
+      const uint8_t raw = frame.getPixel(x, y) & 0x1FU;
+      // Temporal (frame-to-frame) dithering was tried here to recover
+      // resolution beyond what the brightness scaling can represent
+      // directly, but alternating a pixel's rendered level between two
+      // adjacent palette entries across frames reintroduces the exact
+      // "low toggle frequency reads as flicker" problem this whole
+      // design was meant to avoid — for uneven splits the alternation
+      // rate can drop well below a comfortable flicker-free frequency
+      // (confirmed live: flicker specifically in the brightness range
+      // where interpolation was active, not at the extremes where
+      // rounding is exact). Plain per-frame rounding instead — no
+      // memory between frames.
       uint8_t scaledRaw = static_cast<uint8_t>(lroundf(static_cast<float>(raw) * brightnessScale_));
       // Floor any nonzero source pixel to at least the dimmest palette
-      // level rather than letting simple rounding collapse it to 0 —
-      // without this, low-but-nonzero brightness settings round every
-      // pixel to black until the scale climbs high enough to round up
-      // (confirmed live: fully black below brightness ~66, since
-      // (66/255)^kBrightnessGamma is roughly where round(15*scale) first
-      // reaches 1). This keeps brightness_==0 as true black (scale is
-      // exactly 0 there) while giving every other setting a visible,
-      // if faint, floor.
+      // level rather than letting rounding collapse it to 0 — without
+      // this, low-but-nonzero brightness settings would render every
+      // pixel black until the scale climbs high enough to round up on
+      // its own (confirmed live under the pre-dithering version of this
+      // code). This keeps brightness_==0 as true black (scale is exactly
+      // 0 there) while giving every other setting a visible, if faint,
+      // floor. Applied after dithering, not folded into the error term,
+      // since this is a deliberate visibility override rather than a
+      // rounding correction.
       if (raw > 0U && brightness_ > 0U && scaledRaw == 0U) {
         scaledRaw = 1U;
       }

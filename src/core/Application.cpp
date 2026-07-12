@@ -4,7 +4,7 @@
 
 Application::Application()
     : eventBus_(stats_),
-      http_(settings_, wifi_, display_, clock_, stats_),
+      http_(settings_, wifi_, display_, clock_, stats_, demoPage_),
       frontBuffer_(kWidth, kHeight, frontStorage_),
       backBuffer_(kWidth, kHeight, backStorage_),
       demoPage_(clock_, stats_),
@@ -27,6 +27,9 @@ void Application::begin() {
   Logger::info(String("Display init ") + (displayOk ? "OK" : "FAILED"));
   display_.setBrightness(settings_.values().brightness);
   display_.setPower(settings_.values().powerOn);
+  display_.setPaletteLevelCount(settings_.values().paletteLevelCount);
+
+  demoPage_.setAnimationSpeedPercent(settings_.values().animationSpeedPercent);
 
   // Temporary: no page-switching mechanism is wired up yet (EventType::SetPage
   // exists but isn't handled), so this picks which Page is visible at boot.

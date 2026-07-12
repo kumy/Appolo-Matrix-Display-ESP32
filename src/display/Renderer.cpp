@@ -97,7 +97,7 @@ const uint8_t* glyphRowsFor(char c) {
 }
 }
 
-void Renderer::beginFrame(FrameBuffer4& target) {
+void Renderer::beginFrame(FrameBuffer5& target) {
   target_ = &target;
 }
 

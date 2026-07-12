@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#include "display/FrameBuffer4.h"
+#include "display/FrameBuffer5.h"
 
 enum class HorizontalAlign {
   Left,
@@ -26,7 +26,7 @@ struct TextLayoutOptions {
 
 class Renderer {
 public:
-  void beginFrame(FrameBuffer4& target);
+  void beginFrame(FrameBuffer5& target);
   void clear(uint8_t gray = 0);
   void drawPixel(int16_t x, int16_t y, uint8_t gray);
   void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t gray);
@@ -42,5 +42,5 @@ private:
   void drawChar(int16_t x, int16_t y, char c, uint8_t gray);
   void drawGlyphRows(int16_t x, int16_t y, const uint8_t* rows, uint8_t gray);
 
-  FrameBuffer4* target_ = nullptr;
+  FrameBuffer5* target_ = nullptr;
 };

@@ -5,7 +5,7 @@
 struct DisplayConfig {
   uint16_t width = 80;
   uint16_t height = 16;
-  uint8_t bitDepth = 4;
+  uint8_t bitDepth = 5;
   uint8_t rowAddressBits = 4;
   uint32_t spiHz = 20000000;
   uint8_t pinMosi = 23;
