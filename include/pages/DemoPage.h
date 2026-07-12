@@ -68,7 +68,7 @@ private:
 
   ClockService& clock_;
   RuntimeStats& stats_;
-  DemoSceneId scene_ = DemoSceneId::Tetris;
+  DemoSceneId scene_ = DemoSceneId::Grayscale;
   uint32_t sceneStartedAtMs_ = 0;
 
   // Autonomous snake: no input hardware exists on this device, so it plays

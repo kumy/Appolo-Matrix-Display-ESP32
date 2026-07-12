@@ -315,7 +315,7 @@ void DemoPage::draw(Renderer& renderer) {
         renderer.drawText(labelX, 0, label, GrayLevels::kFull);
 
         if (index > 0) {
-          renderer.drawLine(x0, 0, x0, static_cast<int16_t>(kGradientY - 1), GrayLevels::kFull);
+          renderer.drawLine(x0, 7, x0, static_cast<int16_t>(kGradientY - 1), GrayLevels::kFull);
         }
       }
       break;

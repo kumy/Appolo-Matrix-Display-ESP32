@@ -16,8 +16,8 @@
 // DemoPage's Grayscale scene) derive band counts from it, so changing the
 // number/values of levels here is sufficient on its own.
 namespace GrayLevels {
-// constexpr uint8_t kLevels[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-constexpr uint8_t kLevels[] = {0, 1, 2, 5, 15};
+constexpr uint8_t kLevels[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+// constexpr uint8_t kLevels[] = {0, 1, 2, 5, 15};
 // constexpr uint8_t kLevels[] = {0, 1, 4, 9,15};
 constexpr size_t kCount = sizeof(kLevels) / sizeof(kLevels[0]);
 constexpr uint8_t kBlack = kLevels[0];

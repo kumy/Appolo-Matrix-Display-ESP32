@@ -1,13 +1,10 @@
 #include "core/Application.h"
 
-#include <esp32-hal.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
 #include "util/Logger.h"
 
 Application::Application()
     : eventBus_(stats_),
+      http_(settings_, wifi_, display_, clock_, stats_),
       frontBuffer_(kWidth, kHeight, frontStorage_),
       backBuffer_(kWidth, kHeight, backStorage_),
       demoPage_(clock_, stats_),
@@ -21,33 +18,43 @@ void Application::begin() {
 
   settings_.begin();
   clock_.begin();
-  wifi_.begin();
+  wifi_.begin(settings_.values().hostname, settings_.values().wifiSsid, settings_.values().wifiPassword);
   http_.begin();
   mqtt_.begin();
   ota_.begin();
 
-  display_.begin(settings_.values().display);
+  const bool displayOk = display_.begin(settings_.values().display);
+  Logger::info(String("Display init ") + (displayOk ? "OK" : "FAILED"));
   display_.setBrightness(settings_.values().brightness);
   display_.setPower(settings_.values().powerOn);
 
+  // Temporary: no page-switching mechanism is wired up yet (EventType::SetPage
+  // exists but isn't handled), so this picks which Page is visible at boot.
+//   activePage_ = &deathDatesPage_;
   activePage_ = &demoPage_;
   activePage_->enter();
   lastFrameAtUs_ = micros();
   lastRenderStartedUs_ = lastFrameAtUs_;
   lastFrameWindowMs_ = millis();
 
-  xTaskCreatePinnedToCore(
-      &Application::refreshTaskEntry,
-      "DisplayRefresh",
-      4096,
-      this,
-      1,
-      &refreshTaskHandle_,
-      0);
+  // core=0: alongside WiFi/lwIP/AsyncTCP, deliberately off of core 1 (which
+  // DisplayDriver's scan task now has exclusively) — see the class-level
+  // comment in Application.h. priority=1: matches AsyncTCP's/WiFi's usual
+  // relative ranking (below the driver-level tasks, above idle), and this
+  // task blocks every iteration (vTaskDelay), so it never competes for CPU
+  // the way a busy-loop would.
+  xTaskCreatePinnedToCore(&Application::appTaskEntry, "app_task", 8192, this, 1, &appTaskHandle_, 0);
+}
 
-    // Core 0 is currently dedicated to the refresh task, so the default idle watchdog
-    // becomes a false positive until scan timing is moved to a timer-assisted path.
-    disableCore0WDT();
+void Application::appTaskEntry(void* arg) {
+  static_cast<Application*>(arg)->appTaskLoop();
+}
+
+void Application::appTaskLoop() {
+  for (;;) {
+    tick();
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
 }
 
 void Application::tick() {
@@ -59,6 +66,11 @@ void Application::tick() {
   mqtt_.poll();
   ota_.poll();
   clock_.updateFromMillis(nowMs);
+
+  if (!ntpStarted_ && wifi_.isConnected()) {
+    ntpStarted_ = true;
+    clock_.beginNtp(settings_.values().ntpServer, settings_.values().utcOffsetMinutes);
+  }
 
   if ((nowUs - lastRenderStartedUs_) < targetFramePeriodUs_) {
     return;
@@ -92,16 +104,6 @@ void Application::tick() {
   stats_.refreshHz = driverStats.refreshHz;
   stats_.publishLatencyUs = driverStats.publishLatencyUs;
   stats_.frameLatencyUs = driverStats.frameLatencyUs;
-  stats_.droppedPresents += driverStats.droppedPresents;
-  stats_.scanUnderruns += driverStats.scanUnderruns;
-}
-
-void Application::refreshTaskEntry(void* parameter) {
-  static_cast<Application*>(parameter)->refreshTaskLoop();
-}
-
-void Application::refreshTaskLoop() {
-  for (;;) {
-    display_.serviceScan(micros());
-  }
+  stats_.droppedPresents = driverStats.droppedPresents;
+  stats_.scanUnderruns = driverStats.scanUnderruns;
 }

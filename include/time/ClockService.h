@@ -2,9 +2,15 @@
 
 #include <Arduino.h>
 
+// Falls back to a millis()-since-boot clock (nowMs_) until beginNtp() has
+// been called AND the SNTP sync has actually landed (checked via a sane
+// epoch lower bound, not just "was configTime() called") — public API
+// (hours/minutes/seconds/timeString/dateString/synced) is unchanged either
+// way, so callers never need to care which source is active.
 class ClockService {
 public:
   void begin();
+  void beginNtp(const String& server, int16_t utcOffsetMinutes);
   void updateFromMillis(uint32_t nowMs);
   String timeString() const;
   String dateString() const;
@@ -15,5 +21,5 @@ public:
 
 private:
   uint32_t nowMs_ = 0;
-  bool synced_ = false;
+  bool ntpConfigured_ = false;
 };
