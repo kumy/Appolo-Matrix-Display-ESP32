@@ -602,7 +602,7 @@ void DemoPage::draw(Renderer& renderer) {
         if (d < 0 || d >= static_cast<int16_t>(TetrisState::kDepth) || lane < 0 || lane >= static_cast<int16_t>(TetrisState::kLanes)) {
           continue;
         }
-        renderer.fillRect(static_cast<int16_t>(d * kCell), static_cast<int16_t>(lane * kCell), kCell, kCell, GrayLevels::kFull);
+        renderer.fillRect(static_cast<int16_t>(d * kCell), static_cast<int16_t>(lane * kCell), kCell, kCell, tetris_.pieceShade);
       }
       break;
     }
@@ -675,29 +675,31 @@ void DemoPage::draw(Renderer& renderer) {
 
 void DemoPage::advanceScene() {
   switch (scene_) {
-    // case DemoSceneId::Grayscale: scene_ = DemoSceneId::Tetris; break;
-    // case DemoSceneId::Tetris: scene_ = DemoSceneId::Grayscale; break;
+    case DemoSceneId::Grayscale: scene_ = DemoSceneId::Transition; break;
+    case DemoSceneId::Transition: scene_ = DemoSceneId::Tetris; break;
+    case DemoSceneId::Tetris: scene_ = DemoSceneId::Checkerboard; break;
+    case DemoSceneId::Checkerboard: scene_ = DemoSceneId::Grayscale; break;
 
-    case DemoSceneId::Fill: scene_ = DemoSceneId::Grayscale; break;
-    case DemoSceneId::Grayscale: scene_ = DemoSceneId::Primitives; break;
-    case DemoSceneId::Primitives: scene_ = DemoSceneId::Text; break;
-    case DemoSceneId::Text: scene_ = DemoSceneId::MultilineText; break;
-    case DemoSceneId::MultilineText: scene_ = DemoSceneId::Clock; break;
-    case DemoSceneId::Clock: scene_ = DemoSceneId::Bitmap; break;
-    case DemoSceneId::Bitmap: scene_ = DemoSceneId::Transition; break;
-    case DemoSceneId::Transition: scene_ = DemoSceneId::Checkerboard; break;
-    case DemoSceneId::Checkerboard: scene_ = DemoSceneId::EdgeStress; break;
-    case DemoSceneId::EdgeStress: scene_ = DemoSceneId::Diagnostics; break;
-    case DemoSceneId::Diagnostics: scene_ = DemoSceneId::Marquee; break;
-    case DemoSceneId::Marquee: scene_ = DemoSceneId::BouncingBall; break;
-    case DemoSceneId::BouncingBall: scene_ = DemoSceneId::SparklingHearts; break;
-    case DemoSceneId::SparklingHearts: scene_ = DemoSceneId::Snake; break;
-    case DemoSceneId::Snake: scene_ = DemoSceneId::SpaceInvaders; break;
-    case DemoSceneId::SpaceInvaders: scene_ = DemoSceneId::Tetris; break;
-    case DemoSceneId::Tetris: scene_ = DemoSceneId::Pong; break;
-    case DemoSceneId::Pong: scene_ = DemoSceneId::Mario; break;
-    case DemoSceneId::Mario: scene_ = DemoSceneId::Fireworks; break;
-    case DemoSceneId::Fireworks: scene_ = DemoSceneId::Fill; break;
+    // case DemoSceneId::Fill: scene_ = DemoSceneId::Grayscale; break;
+    // case DemoSceneId::Grayscale: scene_ = DemoSceneId::Primitives; break;
+    // case DemoSceneId::Primitives: scene_ = DemoSceneId::Text; break;
+    // case DemoSceneId::Text: scene_ = DemoSceneId::MultilineText; break;
+    // case DemoSceneId::MultilineText: scene_ = DemoSceneId::Clock; break;
+    // case DemoSceneId::Clock: scene_ = DemoSceneId::Bitmap; break;
+    // case DemoSceneId::Bitmap: scene_ = DemoSceneId::Transition; break;
+    // case DemoSceneId::Transition: scene_ = DemoSceneId::Checkerboard; break;
+    // case DemoSceneId::Checkerboard: scene_ = DemoSceneId::EdgeStress; break;
+    // case DemoSceneId::EdgeStress: scene_ = DemoSceneId::Diagnostics; break;
+    // case DemoSceneId::Diagnostics: scene_ = DemoSceneId::Marquee; break;
+    // case DemoSceneId::Marquee: scene_ = DemoSceneId::BouncingBall; break;
+    // case DemoSceneId::BouncingBall: scene_ = DemoSceneId::SparklingHearts; break;
+    // case DemoSceneId::SparklingHearts: scene_ = DemoSceneId::Snake; break;
+    // case DemoSceneId::Snake: scene_ = DemoSceneId::SpaceInvaders; break;
+    // case DemoSceneId::SpaceInvaders: scene_ = DemoSceneId::Tetris; break;
+    // case DemoSceneId::Tetris: scene_ = DemoSceneId::Pong; break;
+    // case DemoSceneId::Pong: scene_ = DemoSceneId::Mario; break;
+    // case DemoSceneId::Mario: scene_ = DemoSceneId::Fireworks; break;
+    // case DemoSceneId::Fireworks: scene_ = DemoSceneId::Fill; break;
   }
 }
 

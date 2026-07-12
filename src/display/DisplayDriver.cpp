@@ -29,27 +29,14 @@ constexpr uint8_t kPlaneCount = 4;
 //
 // Measured on hardware, a single step costs ~20-50us (SPI.transfer() +
 // gptimer_get_raw_count()/gptimer_set_alarm_action() + GPIO work). This
-// FIXED base quantum sits comfortably above that. It is deliberately NOT
-// scaled by brightness (an earlier design did that, and it's what caused
-// dim gray levels to become extremely short, timing-sensitive pulses at
-// low brightness — see the class-level comment in DisplayDriver.h on the
-// two-layer split). Global brightness is applied as a nested PWM window
-// inside each slot instead — see performScanStep(). 40 was chosen over a
-// larger value (100 was tried) specifically for refresh rate: at 100,
-// refreshHz dropped to ~40Hz and visible flicker returned at ALL
-// brightness levels (confirmed live) — refresh rate and nested-PWM
-// resolution pull in opposite directions here (bigger quantum = more
-// microseconds to resolve brightness with, but proportionally fewer
-// refreshes/sec), and flicker is the more fundamental defect of the two.
-// 40 matches the value already confirmed flicker-free live (~90Hz). The
-// remaining low-brightness precision loss this trades away needs a
-// different fix than "make the quantum bigger" — see class comment.
-constexpr uint16_t kBasePlaneQuantumUs = 40;
-// Minimum nested-brightness-PWM pulse width treated as reliably visible
-// — see performScanStep()'s two-branch windowing. A conservative,
-// untuned starting point (a handful of busy-wait loop iterations' worth
-// of margin above the check overhead itself); may need live tuning.
-constexpr uint32_t kMinEffectiveEnableUs = 3;
+// FIXED base quantum sits comfortably above that, and — unlike earlier
+// designs — is completely independent of brightness (see the
+// class-level comment in DisplayDriver.h): brightness is now applied by
+// scaling pixel values in software before quantizeGrayLevel(), not by
+// touching scan timing at all. That means this constant can be tuned
+// purely for refresh rate/motion clarity without any brightness-related
+// trade-off pulling the other way.
+constexpr uint16_t kBasePlaneQuantumUs = 24;
 // Human brightness perception is roughly logarithmic, not linear with
 // duty cycle — a linear PWM mapping spends most of its input range in the
 // perceptually-saturated "looks full" zone (confirmed live: 25/50/100
@@ -231,12 +218,13 @@ void DisplayDriver::setPower(bool enabled) {
 
 void DisplayDriver::setBrightness(uint8_t brightness) {
   brightness_ = brightness;
-  // The "second BAM": how much of each (fixed-duration, never-scaled)
-  // per-pixel BAM slot output should actually stay enabled for. Gamma
-  // correction here — not a linear brightness/255 fraction — for the
-  // same reason as the per-pixel palette: a linear duty-cycle fraction
-  // spends most of its input range looking "full" to the eye.
-  globalBrightnessFraction_ = powf(static_cast<float>(brightness_) / 255.0f, kBrightnessGamma);
+  // Gamma-corrected fraction each pixel's raw value is scaled by in
+  // buildScanPlanes() before quantizing to the GrayLevels palette — a
+  // linear brightness/255 fraction would spend most of its input range
+  // still looking "full" to the eye (confirmed live under the earlier
+  // timing-based design, which used the same gamma curve for the same
+  // reason).
+  brightnessScale_ = powf(static_cast<float>(brightness_) / 255.0f, kBrightnessGamma);
 }
 
 void DisplayDriver::present(const FrameBuffer4& frame) {
@@ -338,63 +326,13 @@ void DisplayDriver::performScanStep() {
   transferCurrentRow();
   stats_.waitStepLastUs = micros() - transferStartedUs;
 
+  // Global brightness no longer touches this at all — see the
+  // class-level comment on software pixel scaling. A pixel/plane is
+  // either lit for its full, fixed BAM slot duration or not lit; there's
+  // nothing to dim here, so every slot's timing is uniform and fast.
   const uint32_t gpioStartedUs = micros();
   latchRow();
-  // brightness_==0 stays blanked here rather than briefly enabling output
-  // just to immediately re-blank it below — a true off, not the shortest
-  // achievable pulse.
-  if (brightness_ > 0) {
-    enableOutput();
-    if (globalBrightnessFraction_ < 0.999f) {
-      // Second BAM layer: global brightness as a dithered PWM window
-      // INSIDE this already-scheduled, fixed-duration slot, independent
-      // of the per-pixel gray-level weighting above.
-      const float idealWindowUs = static_cast<float>(currentSlotDurationUs_) * globalBrightnessFraction_;
-      float& ditherAccumulator = brightnessDitherAccumulator_[planeIndex];
-      uint32_t enableWindowUs;
-      if (idealWindowUs >= static_cast<float>(kMinEffectiveEnableUs)) {
-        // Already above the minimum reliably-visible pulse width (see
-        // kMinEffectiveEnableUs) — dither only the fractional remainder,
-        // recovering sub-microsecond resolution that truncating to an
-        // integer window each step alone would throw away.
-        float flooredWindowUs = floorf(idealWindowUs);
-        ditherAccumulator += (idealWindowUs - flooredWindowUs);
-        if (ditherAccumulator >= 1.0f) {
-          ditherAccumulator -= 1.0f;
-          flooredWindowUs += 1.0f;
-        }
-        enableWindowUs = static_cast<uint32_t>(flooredWindowUs);
-      } else {
-        // Below the minimum-effective threshold: shrinking the pulse
-        // further isn't reliable (confirmed live: adjacent gray levels
-        // became indistinguishable/non-monotonic once their nested
-        // windows dropped to a few microseconds or less — either the
-        // LED/driver's own rise time or the busy-wait loop's own check
-        // overhead stops resolving differences that small). Instead of
-        // an ever-shorter pulse, emit a full-width, reliably-effective
-        // kMinEffectiveEnableUs pulse only as OFTEN as needed to match
-        // the target average — frequency-domain dithering instead of
-        // duration-domain truncation.
-        ditherAccumulator += idealWindowUs / static_cast<float>(kMinEffectiveEnableUs);
-        if (ditherAccumulator >= 1.0f) {
-          ditherAccumulator -= 1.0f;
-          enableWindowUs = kMinEffectiveEnableUs;
-        } else {
-          enableWindowUs = 0;
-        }
-      }
-      if (enableWindowUs > 0) {
-        const uint32_t enableStartedUs = micros();
-        while ((micros() - enableStartedUs) < enableWindowUs) {
-          // Busy-wait: core 1 is dedicated to this task (see
-          // Application.h), so there's nothing else this could be
-          // starving, and a real timer for a window this short would
-          // cost more in scheduling overhead than the window itself.
-        }
-      }
-      blankOutput();
-    }
-  }
+  enableOutput();
   stats_.gpioStepLastUs = micros() - gpioStartedUs;
 
   advanceScanPosition();
@@ -462,9 +400,28 @@ void DisplayDriver::latchRow() {
 
 void DisplayDriver::buildScanPlanes(const FrameBuffer4& frame, uint8_t* destination) {
   memset(destination, 0, scanBufferBytes_);
+  // Global brightness applied here, in software, before quantization —
+  // see the class-level comment for why (flicker/precision problems with
+  // scan-timing-based dimming). Runs on the core-0 app task (via
+  // present()), not the timing-critical core-1 scan task, so there's no
+  // cost to doing float math per pixel here.
   for (uint16_t y = 0; y < config_.height; ++y) {
     for (uint16_t x = 0; x < config_.width; ++x) {
-      const uint8_t level = quantizeGrayLevel(frame.getPixel(x, y) & 0x0FU);
+      const uint8_t raw = frame.getPixel(x, y) & 0x0FU;
+      uint8_t scaledRaw = static_cast<uint8_t>(lroundf(static_cast<float>(raw) * brightnessScale_));
+      // Floor any nonzero source pixel to at least the dimmest palette
+      // level rather than letting simple rounding collapse it to 0 —
+      // without this, low-but-nonzero brightness settings round every
+      // pixel to black until the scale climbs high enough to round up
+      // (confirmed live: fully black below brightness ~66, since
+      // (66/255)^kBrightnessGamma is roughly where round(15*scale) first
+      // reaches 1). This keeps brightness_==0 as true black (scale is
+      // exactly 0 there) while giving every other setting a visible,
+      // if faint, floor.
+      if (raw > 0U && brightness_ > 0U && scaledRaw == 0U) {
+        scaledRaw = 1U;
+      }
+      const uint8_t level = quantizeGrayLevel(scaledRaw);
       if (level == 0U) {
         continue;
       }
