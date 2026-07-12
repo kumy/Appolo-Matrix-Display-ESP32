@@ -12,8 +12,12 @@ public:
 
   void update(uint32_t nowMs) override;
   void draw(Renderer& renderer) override;
+  void setAnalogMode(bool analog);
 
 private:
+  void drawAnalog(Renderer& renderer) const;
+
   ClockService& clock_;
   uint32_t nowMs_ = 0;
+  bool analogMode_ = false;
 };

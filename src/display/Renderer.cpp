@@ -199,33 +199,64 @@ void Renderer::drawText(int16_t x, int16_t y, const String& text, uint8_t gray) 
 }
 
 void Renderer::drawTextBox(int16_t x, int16_t y, const TextLayoutOptions& options, const String& text, uint8_t gray) {
-  int16_t cursorX = x;
-  int16_t cursorY = y;
   const int16_t maxWidth = options.maxWidth > 0 ? options.maxWidth : 32767;
   const int16_t maxHeight = options.maxHeight > 0 ? options.maxHeight : 32767;
+  const size_t textLen = static_cast<size_t>(text.length());
 
-  for (size_t i = 0; i < static_cast<size_t>(text.length()); ++i) {
-    const char c = static_cast<char>(toupper(text[i]));
-    if (c == '\n') {
-      cursorX = x;
-      cursorY += kGlyphHeight + options.lineSpacing;
-      if ((cursorY - y) >= maxHeight) {
-        break;
-      }
-      continue;
+  int16_t cursorY = y;
+  size_t i = 0;
+  while (i < textLen) {
+    if ((cursorY - y) >= maxHeight) {
+      break;
     }
-    if ((cursorX - x) + static_cast<int16_t>(kGlyphSpace) > maxWidth) {
-      if (options.wrapMode == TextWrapMode::None) {
+
+    // Collect one line's worth of characters — character-boundary wrap
+    // (or truncate-at-overflow for TextWrapMode::None). Word vs character
+    // wrap has never been distinguished here beyond that; both wrap at
+    // whatever character hits maxWidth.
+    const size_t lineStart = i;
+    int16_t lineWidthPx = 0;
+    while (i < textLen) {
+      const char c = text[i];
+      if (c == '\n') {
         break;
       }
-      cursorX = x;
-      cursorY += kGlyphHeight + options.lineSpacing;
-      if ((cursorY - y) >= maxHeight) {
+      if ((lineWidthPx + static_cast<int16_t>(kGlyphSpace)) > maxWidth) {
+        if (options.wrapMode == TextWrapMode::None) {
+          // Truncate this line: skip any remaining characters up to the
+          // next newline (or end) without drawing them.
+          while (i < textLen && text[i] != '\n') {
+            ++i;
+          }
+        }
         break;
+      }
+      lineWidthPx += kGlyphSpace;
+      ++i;
+    }
+
+    // Alignment only makes sense against an explicit box width — with the
+    // default (unset, effectively infinite) width this stays Left so
+    // existing callers like drawText() are unaffected.
+    int16_t startX = x;
+    if (options.maxWidth > 0) {
+      if (options.align == HorizontalAlign::Center) {
+        startX = static_cast<int16_t>(x + (options.maxWidth - lineWidthPx) / 2);
+      } else if (options.align == HorizontalAlign::Right) {
+        startX = static_cast<int16_t>(x + (options.maxWidth - lineWidthPx));
       }
     }
-    drawChar(cursorX, cursorY, c, gray);
-    cursorX += kGlyphSpace;
+
+    int16_t cursorX = startX;
+    for (size_t j = lineStart; j < i; ++j) {
+      drawChar(cursorX, cursorY, static_cast<char>(toupper(text[j])), gray);
+      cursorX += kGlyphSpace;
+    }
+
+    if (i < textLen && text[i] == '\n') {
+      ++i;
+    }
+    cursorY += kGlyphHeight + options.lineSpacing;
   }
 }
 

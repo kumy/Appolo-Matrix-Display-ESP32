@@ -40,11 +40,23 @@ public:
   Application();
 
   void begin();
+  // Switches the physical display to a different Page — id maps to
+  // 0=Demo, 1=Clock, 2=Text, 3=Diagnostics, 4=DeathDates (see
+  // pageById()). Calls leave() on the outgoing page and enter() on the
+  // incoming one, matching Page's existing lifecycle hooks. A pageId with
+  // no mapping (or the currently-active one) is a no-op.
+  void setActivePage(uint8_t pageId);
+
+  DemoPage& demoPage() { return demoPage_; }
+  DiagnosticsPage& diagnosticsPage() { return diagnosticsPage_; }
+  TextPage& textPage() { return textPage_; }
+  ClockPage& clockPage() { return clockPage_; }
 
 private:
   static void appTaskEntry(void* arg);
   void appTaskLoop();
   void tick();
+  Page* pageById(uint8_t id);
 
   static constexpr uint16_t kWidth = 80;
   static constexpr uint16_t kHeight = 16;
@@ -70,6 +82,7 @@ private:
   ClockPage clockPage_;
   DeathDatesPage deathDatesPage_;
   Page* activePage_ = nullptr;
+  uint8_t activePageId_ = 0;
   uint32_t lastFrameAtUs_ = 0;
   uint32_t lastRenderStartedUs_ = 0;
   uint32_t lastFrameWindowMs_ = 0;

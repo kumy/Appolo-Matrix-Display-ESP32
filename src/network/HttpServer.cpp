@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 
+#include "core/Application.h"
 #include "display/DisplayDriver.h"
 #include "network/WifiManager.h"
 #include "pages/DemoPage.h"
@@ -59,6 +60,89 @@ const char kStatusPageHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
 
   <div class="card mb-3">
     <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Page</h6>
+      <select class="form-select mb-3" id="pageSelect">
+        <option value="0">Demo</option>
+        <option value="1">Clock</option>
+        <option value="2">Text</option>
+        <option value="3">Diagnostics</option>
+        <option value="4">Death Dates</option>
+      </select>
+
+      <div id="pane-1" class="page-pane d-none">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="clockAnalogSwitch">
+          <label class="form-check-label" for="clockAnalogSwitch">Analog clock</label>
+        </div>
+      </div>
+
+      <div id="pane-2" class="page-pane d-none">
+        <label for="textMessageInput" class="form-label">Message</label>
+        <textarea class="form-control mb-2" id="textMessageInput" rows="2"></textarea>
+        <label for="textAlignSelect" class="form-label">Position</label>
+        <select class="form-select mb-2" id="textAlignSelect">
+          <option value="0">Left</option>
+          <option value="1">Center</option>
+          <option value="2">Right</option>
+        </select>
+        <label for="textAnimSelect" class="form-label">Animation</label>
+        <select class="form-select mb-2" id="textAnimSelect">
+          <option value="0">Fixed</option>
+          <option value="1">Marquee</option>
+        </select>
+        <label for="textDirSelect" class="form-label">Marquee direction</label>
+        <select class="form-select mb-2" id="textDirSelect">
+          <option value="0">Left (&larr;)</option>
+          <option value="1">Right (&rarr;)</option>
+        </select>
+        <label for="textEffectSelect" class="form-label">Appear effect</label>
+        <select class="form-select mb-2" id="textEffectSelect">
+          <option value="0">None</option>
+          <option value="1">Fade in</option>
+        </select>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="textMessageApply">Apply message</button>
+      </div>
+
+      <div id="pane-0" class="page-pane d-none">
+        <label for="demoSceneSelect" class="form-label">Scene</label>
+        <select class="form-select" id="demoSceneSelect">
+          <option value="-1">Auto-rotate</option>
+          <option value="0">Fill</option>
+          <option value="1">Grayscale</option>
+          <option value="2">Primitives</option>
+          <option value="3">Text</option>
+          <option value="4">MultilineText</option>
+          <option value="5">Clock</option>
+          <option value="6">Bitmap</option>
+          <option value="7">Transition</option>
+          <option value="8">Checkerboard</option>
+          <option value="9">EdgeStress</option>
+          <option value="10">Diagnostics</option>
+          <option value="11">Marquee</option>
+          <option value="12">BouncingBall</option>
+          <option value="13">SparklingHearts</option>
+          <option value="14">Snake</option>
+          <option value="15">SpaceInvaders</option>
+          <option value="16">Tetris</option>
+          <option value="17">Pong</option>
+          <option value="18">Mario</option>
+          <option value="19">Fireworks</option>
+        </select>
+      </div>
+
+      <div id="pane-3" class="page-pane d-none">
+        <label for="diagViewSelect" class="form-label">View</label>
+        <select class="form-select" id="diagViewSelect">
+          <option value="0">Overview</option>
+          <option value="1">Render timing</option>
+          <option value="2">Scan timing</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
       <h6 class="card-subtitle mb-3 text-body-secondary">Network</h6>
       <a href="/wifi" class="btn btn-outline-secondary btn-sm">Configure WiFi</a>
     </div>
@@ -93,6 +177,17 @@ function refresh() {
       document.getElementById('paletteValue').textContent = data.paletteLevelCount;
       document.getElementById('speedRange').value = data.animationSpeedPercent;
       document.getElementById('speedValue').textContent = data.animationSpeedPercent;
+
+      document.getElementById('pageSelect').value = data.activePageId;
+      showPane(data.activePageId);
+      document.getElementById('clockAnalogSwitch').checked = data.clockAnalogMode;
+      document.getElementById('textMessageInput').value = data.textMessage;
+      document.getElementById('textAlignSelect').value = data.textAlign;
+      document.getElementById('textAnimSelect').value = data.textAnimMode;
+      document.getElementById('textDirSelect').value = data.textDirection;
+      document.getElementById('textEffectSelect').value = data.textEffect;
+      document.getElementById('demoSceneSelect').value = (data.demoFixedScene === 255) ? -1 : data.demoFixedScene;
+      document.getElementById('diagViewSelect').value = data.diagView;
     }
 
     const rateFields = ['fps', 'refreshHz', 'driverRefreshHz'];
@@ -141,6 +236,46 @@ function pushSettings(partial) {
   }).catch(function () {});
 }
 
+function showPane(pageId) {
+  document.querySelectorAll('.page-pane').forEach(function (el) {
+    el.classList.add('d-none');
+  });
+  const pane = document.getElementById('pane-' + pageId);
+  if (pane) {
+    pane.classList.remove('d-none');
+  }
+}
+
+document.getElementById('pageSelect').addEventListener('change', function (e) {
+  const pageId = parseInt(e.target.value, 10);
+  showPane(pageId);
+  pushSettings({activePageId: pageId});
+});
+document.getElementById('clockAnalogSwitch').addEventListener('change', function (e) {
+  pushSettings({clockAnalogMode: e.target.checked});
+});
+document.getElementById('textMessageApply').addEventListener('click', function () {
+  pushSettings({textMessage: document.getElementById('textMessageInput').value});
+});
+document.getElementById('textAlignSelect').addEventListener('change', function (e) {
+  pushSettings({textAlign: parseInt(e.target.value, 10)});
+});
+document.getElementById('textAnimSelect').addEventListener('change', function (e) {
+  pushSettings({textAnimMode: parseInt(e.target.value, 10)});
+});
+document.getElementById('textDirSelect').addEventListener('change', function (e) {
+  pushSettings({textDirection: parseInt(e.target.value, 10)});
+});
+document.getElementById('textEffectSelect').addEventListener('change', function (e) {
+  pushSettings({textEffect: parseInt(e.target.value, 10)});
+});
+document.getElementById('demoSceneSelect').addEventListener('change', function (e) {
+  pushSettings({demoFixedScene: parseInt(e.target.value, 10)});
+});
+document.getElementById('diagViewSelect').addEventListener('change', function (e) {
+  pushSettings({diagView: parseInt(e.target.value, 10)});
+});
+
 document.getElementById('powerSwitch').addEventListener('change', function (e) {
   pushSettings({powerOn: e.target.checked});
 });
@@ -172,8 +307,8 @@ setInterval(refresh, 5000);
 )HTML";
 }
 
-HttpServer::HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats, DemoPage& demoPage)
-    : settings_(settings), wifi_(wifi), display_(display), clock_(clock), stats_(stats), demoPage_(demoPage) {}
+HttpServer::HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats, Application& app)
+    : settings_(settings), wifi_(wifi), display_(display), clock_(clock), stats_(stats), app_(app) {}
 
 void HttpServer::begin() {
   setupApiRoutes();
@@ -214,6 +349,15 @@ void HttpServer::setupApiRoutes() {
     doc["powerOn"] = settings_.values().powerOn;
     doc["paletteLevelCount"] = settings_.values().paletteLevelCount;
     doc["animationSpeedPercent"] = settings_.values().animationSpeedPercent;
+    doc["activePageId"] = settings_.values().activePageId;
+    doc["clockAnalogMode"] = settings_.values().clockAnalogMode;
+    doc["textMessage"] = settings_.values().textMessage;
+    doc["textAlign"] = settings_.values().textAlign;
+    doc["textAnimMode"] = settings_.values().textAnimMode;
+    doc["textDirection"] = settings_.values().textDirection;
+    doc["textEffect"] = settings_.values().textEffect;
+    doc["demoFixedScene"] = settings_.values().demoFixedScene;
+    doc["diagView"] = settings_.values().diagView;
     doc["fps"] = stats_.appFps;
     doc["refreshHz"] = stats_.refreshHz;
     doc["scanUnderruns"] = stats_.scanUnderruns;
@@ -263,7 +407,53 @@ void HttpServer::setupApiRoutes() {
     if (body["animationSpeedPercent"].is<int>()) {
       const uint16_t percent = static_cast<uint16_t>(constrain(body["animationSpeedPercent"].as<int>(), 10, 400));
       settings_.setAnimationSpeedPercent(percent);
-      demoPage_.setAnimationSpeedPercent(percent);
+      app_.demoPage().setAnimationSpeedPercent(percent);
+    }
+    if (body["activePageId"].is<int>()) {
+      const uint8_t pageId = static_cast<uint8_t>(constrain(body["activePageId"].as<int>(), 0, 4));
+      settings_.setActivePageId(pageId);
+      app_.setActivePage(pageId);
+    }
+    if (body["clockAnalogMode"].is<bool>()) {
+      const bool analog = body["clockAnalogMode"].as<bool>();
+      settings_.setClockAnalogMode(analog);
+      app_.clockPage().setAnalogMode(analog);
+    }
+    if (body["textMessage"].is<const char*>()) {
+      const String message = body["textMessage"].as<String>();
+      settings_.setTextMessage(message);
+      app_.textPage().setMessage(message);
+    }
+    if (body["textAlign"].is<int>()) {
+      const uint8_t align = static_cast<uint8_t>(constrain(body["textAlign"].as<int>(), 0, 2));
+      settings_.setTextAlign(align);
+      app_.textPage().setAlign(static_cast<HorizontalAlign>(align));
+    }
+    if (body["textAnimMode"].is<int>()) {
+      const uint8_t mode = static_cast<uint8_t>(constrain(body["textAnimMode"].as<int>(), 0, 1));
+      settings_.setTextAnimMode(mode);
+      app_.textPage().setAnimMode(static_cast<TextAnimMode>(mode));
+    }
+    if (body["textDirection"].is<int>()) {
+      const uint8_t direction = static_cast<uint8_t>(constrain(body["textDirection"].as<int>(), 0, 1));
+      settings_.setTextDirection(direction);
+      app_.textPage().setDirection(static_cast<TextScrollDirection>(direction));
+    }
+    if (body["textEffect"].is<int>()) {
+      const uint8_t effect = static_cast<uint8_t>(constrain(body["textEffect"].as<int>(), 0, 1));
+      settings_.setTextEffect(effect);
+      app_.textPage().setEffect(static_cast<TextEffect>(effect));
+    }
+    if (body["demoFixedScene"].is<int>()) {
+      const int requested = body["demoFixedScene"].as<int>();
+      const uint8_t sceneIndex = requested < 0 ? 255U : static_cast<uint8_t>(constrain(requested, 0, 19));
+      settings_.setDemoFixedScene(sceneIndex);
+      app_.demoPage().setFixedScene(sceneIndex == 255U ? -1 : static_cast<int8_t>(sceneIndex));
+    }
+    if (body["diagView"].is<int>()) {
+      const uint8_t view = static_cast<uint8_t>(constrain(body["diagView"].as<int>(), 0, 2));
+      settings_.setDiagView(view);
+      app_.diagnosticsPage().setView(static_cast<DiagnosticsPage::View>(view));
     }
     request->send(200, "application/json", "{\"ok\":true}");
   });

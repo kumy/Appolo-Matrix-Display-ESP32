@@ -45,6 +45,10 @@ public:
   // and to the step-gate checks in updateSnake()/updateTetris()/
   // updatePong() (discrete step timers) — see their call sites for how.
   void setAnimationSpeedPercent(uint16_t percent);
+  // -1 (or any negative value) = auto-rotate through advanceScene()'s
+  // cycle (original behavior); otherwise pins scene_ to that DemoSceneId
+  // value and suspends automatic advancement.
+  void setFixedScene(int8_t sceneIndex);
 
 private:
   uint32_t scaleMs(uint32_t ms) const;
@@ -81,6 +85,7 @@ private:
   DemoSceneId scene_ = DemoSceneId::Grayscale;
   uint32_t sceneStartedAtMs_ = 0;
   uint16_t animationSpeedPercent_ = 100;
+  int8_t fixedSceneIndex_ = -1;
 
   // Autonomous snake: no input hardware exists on this device, so it plays
   // itself (greedy pathing toward food, self-collision avoidance, respawns

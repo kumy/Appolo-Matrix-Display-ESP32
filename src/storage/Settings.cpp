@@ -33,6 +33,15 @@ void Settings::load() {
   settings_.utcOffsetMinutes = prefs.getShort("utcOffset", settings_.utcOffsetMinutes);
   settings_.paletteLevelCount = prefs.getUChar("paletteLvls", settings_.paletteLevelCount);
   settings_.animationSpeedPercent = prefs.getUShort("animSpeed", settings_.animationSpeedPercent);
+  settings_.activePageId = prefs.getUChar("activePage", settings_.activePageId);
+  settings_.clockAnalogMode = prefs.getBool("clockAnalog", settings_.clockAnalogMode);
+  settings_.textMessage = prefs.getString("textMsg", settings_.textMessage);
+  settings_.textAlign = prefs.getUChar("textAlign", settings_.textAlign);
+  settings_.textAnimMode = prefs.getUChar("textAnim", settings_.textAnimMode);
+  settings_.textDirection = prefs.getUChar("textDir", settings_.textDirection);
+  settings_.textEffect = prefs.getUChar("textEffect", settings_.textEffect);
+  settings_.demoFixedScene = prefs.getUChar("demoScene", settings_.demoFixedScene);
+  settings_.diagView = prefs.getUChar("diagView", settings_.diagView);
   prefs.end();
 }
 
@@ -48,6 +57,15 @@ void Settings::save() const {
   prefs.putShort("utcOffset", settings_.utcOffsetMinutes);
   prefs.putUChar("paletteLvls", settings_.paletteLevelCount);
   prefs.putUShort("animSpeed", settings_.animationSpeedPercent);
+  prefs.putUChar("activePage", settings_.activePageId);
+  prefs.putBool("clockAnalog", settings_.clockAnalogMode);
+  prefs.putString("textMsg", settings_.textMessage);
+  prefs.putUChar("textAlign", settings_.textAlign);
+  prefs.putUChar("textAnim", settings_.textAnimMode);
+  prefs.putUChar("textDir", settings_.textDirection);
+  prefs.putUChar("textEffect", settings_.textEffect);
+  prefs.putUChar("demoScene", settings_.demoFixedScene);
+  prefs.putUChar("diagView", settings_.diagView);
   prefs.end();
 }
 
@@ -78,5 +96,50 @@ void Settings::setPaletteLevelCount(uint8_t count) {
 
 void Settings::setAnimationSpeedPercent(uint16_t percent) {
   settings_.animationSpeedPercent = percent;
+  save();
+}
+
+void Settings::setActivePageId(uint8_t pageId) {
+  settings_.activePageId = pageId;
+  save();
+}
+
+void Settings::setClockAnalogMode(bool analog) {
+  settings_.clockAnalogMode = analog;
+  save();
+}
+
+void Settings::setTextMessage(const String& message) {
+  settings_.textMessage = message;
+  save();
+}
+
+void Settings::setTextAlign(uint8_t align) {
+  settings_.textAlign = align;
+  save();
+}
+
+void Settings::setTextAnimMode(uint8_t mode) {
+  settings_.textAnimMode = mode;
+  save();
+}
+
+void Settings::setTextDirection(uint8_t direction) {
+  settings_.textDirection = direction;
+  save();
+}
+
+void Settings::setTextEffect(uint8_t effect) {
+  settings_.textEffect = effect;
+  save();
+}
+
+void Settings::setDemoFixedScene(uint8_t sceneIndex) {
+  settings_.demoFixedScene = sceneIndex;
+  save();
+}
+
+void Settings::setDiagView(uint8_t view) {
+  settings_.diagView = view;
   save();
 }

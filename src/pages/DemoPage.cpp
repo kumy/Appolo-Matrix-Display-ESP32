@@ -208,8 +208,17 @@ void DemoPage::enter() {
   resetSceneState(sceneStartedAtMs_);
 }
 
+void DemoPage::setFixedScene(int8_t sceneIndex) {
+  fixedSceneIndex_ = sceneIndex;
+  if (fixedSceneIndex_ >= 0) {
+    scene_ = static_cast<DemoSceneId>(fixedSceneIndex_);
+    sceneStartedAtMs_ = millis();
+    resetSceneState(sceneStartedAtMs_);
+  }
+}
+
 void DemoPage::update(uint32_t nowMs) {
-  if ((nowMs - sceneStartedAtMs_) >= sceneDurationMs()) {
+  if (fixedSceneIndex_ < 0 && (nowMs - sceneStartedAtMs_) >= sceneDurationMs()) {
     sceneStartedAtMs_ = nowMs;
     advanceScene();
     resetSceneState(nowMs);

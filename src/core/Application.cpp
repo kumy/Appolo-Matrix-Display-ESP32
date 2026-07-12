@@ -4,7 +4,7 @@
 
 Application::Application()
     : eventBus_(stats_),
-      http_(settings_, wifi_, display_, clock_, stats_, demoPage_),
+      http_(settings_, wifi_, display_, clock_, stats_, *this),
       frontBuffer_(kWidth, kHeight, frontStorage_),
       backBuffer_(kWidth, kHeight, backStorage_),
       demoPage_(clock_, stats_),
@@ -30,11 +30,25 @@ void Application::begin() {
   display_.setPaletteLevelCount(settings_.values().paletteLevelCount);
 
   demoPage_.setAnimationSpeedPercent(settings_.values().animationSpeedPercent);
+  const uint8_t storedScene = settings_.values().demoFixedScene;
+  demoPage_.setFixedScene(storedScene == 255U ? -1 : static_cast<int8_t>(storedScene));
 
-  // Temporary: no page-switching mechanism is wired up yet (EventType::SetPage
-  // exists but isn't handled), so this picks which Page is visible at boot.
-//   activePage_ = &deathDatesPage_;
-  activePage_ = &demoPage_;
+  clockPage_.setAnalogMode(settings_.values().clockAnalogMode);
+
+  textPage_.setMessage(settings_.values().textMessage);
+  textPage_.setAlign(static_cast<HorizontalAlign>(settings_.values().textAlign));
+  textPage_.setAnimMode(static_cast<TextAnimMode>(settings_.values().textAnimMode));
+  textPage_.setDirection(static_cast<TextScrollDirection>(settings_.values().textDirection));
+  textPage_.setEffect(static_cast<TextEffect>(settings_.values().textEffect));
+
+  diagnosticsPage_.setView(static_cast<DiagnosticsPage::View>(settings_.values().diagView));
+
+  activePage_ = pageById(settings_.values().activePageId);
+  activePageId_ = settings_.values().activePageId;
+  if (activePage_ == nullptr) {
+    activePage_ = &demoPage_;
+    activePageId_ = 0;
+  }
   activePage_->enter();
   lastFrameAtUs_ = micros();
   lastRenderStartedUs_ = lastFrameAtUs_;
@@ -47,6 +61,30 @@ void Application::begin() {
   // task blocks every iteration (vTaskDelay), so it never competes for CPU
   // the way a busy-loop would.
   xTaskCreatePinnedToCore(&Application::appTaskEntry, "app_task", 8192, this, 1, &appTaskHandle_, 0);
+}
+
+Page* Application::pageById(uint8_t id) {
+  switch (id) {
+    case 0: return &demoPage_;
+    case 1: return &clockPage_;
+    case 2: return &textPage_;
+    case 3: return &diagnosticsPage_;
+    case 4: return &deathDatesPage_;
+    default: return nullptr;
+  }
+}
+
+void Application::setActivePage(uint8_t pageId) {
+  Page* next = pageById(pageId);
+  if (next == nullptr || next == activePage_) {
+    return;
+  }
+  if (activePage_ != nullptr) {
+    activePage_->leave();
+  }
+  activePage_ = next;
+  activePageId_ = pageId;
+  activePage_->enter();
 }
 
 void Application::appTaskEntry(void* arg) {

@@ -9,7 +9,7 @@ class Settings;
 class WifiManager;
 class DisplayDriver;
 class ClockService;
-class DemoPage;
+class Application;
 
 // Owns the AsyncWebServer instance for the whole device: a JSON REST API
 // (ArduinoJson) at /api/*, a plain HTML WiFi-provisioning form at /wifi
@@ -24,7 +24,7 @@ class DemoPage;
 // real-time constraints — see mem:architecture/networking).
 class HttpServer {
 public:
-  HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats, DemoPage& demoPage);
+  HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats, Application& app);
 
   void begin();
   void poll();
@@ -40,7 +40,7 @@ private:
   DisplayDriver& display_;
   ClockService& clock_;
   RuntimeStats& stats_;
-  DemoPage& demoPage_;
+  Application& app_;
 
   AsyncWebServer server_{80};
 
