@@ -3,11 +3,21 @@
 #include <algorithm>
 #include <cmath>
 
-namespace {
-constexpr uint8_t kGlyphSpace = 4;
-constexpr uint8_t kGlyphHeight = 6;
+#include "display/Font.h"
 
-const uint8_t* glyphRowsFor(char c) {
+namespace {
+// Compiled-in fallback glyph set, used whenever no Font is set via
+// setFont() or the set Font failed to load/doesn't cover a given
+// character — see Font.h's class comment. Also the source data for
+// data/fonts/classic3x5.font (extracted verbatim by the generator script,
+// not retyped, so the two can never drift out of sync by transcription
+// error).
+constexpr uint8_t kBuiltinGlyphWidth = 3;
+constexpr uint8_t kBuiltinGlyphHeight = 5;
+constexpr uint8_t kBuiltinCharPitch = 4;
+constexpr uint8_t kBuiltinLinePitch = 6;
+
+const uint8_t* builtinGlyphRows(char c) {
   static const uint8_t space[5] = {0, 0, 0, 0, 0};
   static const uint8_t colon[5] = {0, 2, 0, 2, 0};
   static const uint8_t dash[5] = {0, 0, 7, 0, 0};
@@ -94,6 +104,40 @@ const uint8_t* glyphRowsFor(char c) {
     case 'Z': return Z;
     default: return space;
   }
+}
+
+// Mirrors drawTextBox()'s own line-splitting/wrap logic exactly (same
+// break conditions) so the line count it returns matches what drawTextBox
+// will actually render — used only to size the vertical-centering offset
+// before the real draw pass runs.
+size_t countTextLines(const String& text, int16_t maxWidth, TextWrapMode wrapMode, uint8_t charPitchPx) {
+  const size_t textLen = static_cast<size_t>(text.length());
+  size_t lines = 0;
+  size_t i = 0;
+  while (i < textLen) {
+    ++lines;
+    int16_t lineWidthPx = 0;
+    while (i < textLen) {
+      const char c = text[i];
+      if (c == '\n') {
+        break;
+      }
+      if ((lineWidthPx + static_cast<int16_t>(charPitchPx)) > maxWidth) {
+        if (wrapMode == TextWrapMode::None) {
+          while (i < textLen && text[i] != '\n') {
+            ++i;
+          }
+        }
+        break;
+      }
+      lineWidthPx += charPitchPx;
+      ++i;
+    }
+    if (i < textLen && text[i] == '\n') {
+      ++i;
+    }
+  }
+  return lines;
 }
 }
 
@@ -204,6 +248,18 @@ void Renderer::drawTextBox(int16_t x, int16_t y, const TextLayoutOptions& option
   const size_t textLen = static_cast<size_t>(text.length());
 
   int16_t cursorY = y;
+  if (options.maxHeight > 0 && options.valign != VerticalAlign::Top) {
+    const size_t lineCount = countTextLines(text, maxWidth, options.wrapMode, charPitch());
+    if (lineCount > 0) {
+      const int16_t totalHeight = static_cast<int16_t>(
+          (lineCount - 1) * (linePitch() + options.lineSpacing) + glyphHeight());
+      if (options.valign == VerticalAlign::Middle) {
+        cursorY = static_cast<int16_t>(y + (options.maxHeight - totalHeight) / 2);
+      } else if (options.valign == VerticalAlign::Bottom) {
+        cursorY = static_cast<int16_t>(y + (options.maxHeight - totalHeight));
+      }
+    }
+  }
   size_t i = 0;
   while (i < textLen) {
     if ((cursorY - y) >= maxHeight) {
@@ -221,7 +277,7 @@ void Renderer::drawTextBox(int16_t x, int16_t y, const TextLayoutOptions& option
       if (c == '\n') {
         break;
       }
-      if ((lineWidthPx + static_cast<int16_t>(kGlyphSpace)) > maxWidth) {
+      if ((lineWidthPx + static_cast<int16_t>(charPitch())) > maxWidth) {
         if (options.wrapMode == TextWrapMode::None) {
           // Truncate this line: skip any remaining characters up to the
           // next newline (or end) without drawing them.
@@ -231,7 +287,7 @@ void Renderer::drawTextBox(int16_t x, int16_t y, const TextLayoutOptions& option
         }
         break;
       }
-      lineWidthPx += kGlyphSpace;
+      lineWidthPx += charPitch();
       ++i;
     }
 
@@ -250,24 +306,52 @@ void Renderer::drawTextBox(int16_t x, int16_t y, const TextLayoutOptions& option
     int16_t cursorX = startX;
     for (size_t j = lineStart; j < i; ++j) {
       drawChar(cursorX, cursorY, static_cast<char>(toupper(text[j])), gray);
-      cursorX += kGlyphSpace;
+      cursorX += charPitch();
     }
 
     if (i < textLen && text[i] == '\n') {
       ++i;
     }
-    cursorY += kGlyphHeight + options.lineSpacing;
+    cursorY += linePitch() + options.lineSpacing;
   }
 }
 
-void Renderer::drawChar(int16_t x, int16_t y, char c, uint8_t gray) {
-  drawGlyphRows(x, y, glyphRowsFor(c), gray);
+void Renderer::setFont(const Font* font) {
+  font_ = font;
 }
 
-void Renderer::drawGlyphRows(int16_t x, int16_t y, const uint8_t* rows, uint8_t gray) {
-  for (int16_t row = 0; row < 5; ++row) {
-    for (int16_t col = 0; col < 3; ++col) {
-      if ((rows[row] & (1 << (2 - col))) != 0) {
+uint8_t Renderer::glyphWidth() const {
+  return (font_ != nullptr && font_->isLoaded()) ? font_->glyphWidth() : kBuiltinGlyphWidth;
+}
+
+uint8_t Renderer::glyphHeight() const {
+  return (font_ != nullptr && font_->isLoaded()) ? font_->glyphHeight() : kBuiltinGlyphHeight;
+}
+
+uint8_t Renderer::charPitch() const {
+  return (font_ != nullptr && font_->isLoaded()) ? font_->charPitch() : kBuiltinCharPitch;
+}
+
+uint8_t Renderer::linePitch() const {
+  return (font_ != nullptr && font_->isLoaded()) ? font_->linePitch() : kBuiltinLinePitch;
+}
+
+void Renderer::drawChar(int16_t x, int16_t y, char c, uint8_t gray) {
+  const uint8_t* rows = nullptr;
+  if (font_ != nullptr && font_->isLoaded()) {
+    rows = font_->glyphRows(c);
+  }
+  if (rows != nullptr) {
+    drawGlyphRows(x, y, rows, font_->glyphWidth(), font_->glyphHeight(), gray);
+    return;
+  }
+  drawGlyphRows(x, y, builtinGlyphRows(c), kBuiltinGlyphWidth, kBuiltinGlyphHeight, gray);
+}
+
+void Renderer::drawGlyphRows(int16_t x, int16_t y, const uint8_t* rows, uint8_t width, uint8_t height, uint8_t gray) {
+  for (int16_t row = 0; row < height; ++row) {
+    for (int16_t col = 0; col < width; ++col) {
+      if ((rows[row] & (1 << (width - 1 - col))) != 0) {
         drawPixel(x + col, y + row, gray);
       }
     }

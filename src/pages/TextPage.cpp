@@ -29,6 +29,18 @@ void TextPage::setAlign(HorizontalAlign align) {
   align_ = align;
 }
 
+void TextPage::setVerticalAlign(VerticalAlign valign) {
+  valign_ = valign;
+}
+
+void TextPage::setOffsetX(int16_t offsetX) {
+  offsetX_ = offsetX;
+}
+
+void TextPage::setOffsetY(int16_t offsetY) {
+  offsetY_ = offsetY;
+}
+
 void TextPage::setAnimMode(TextAnimMode mode) {
   animMode_ = mode;
   // Restart cleanly rather than resuming mid-scroll/mid-fade from
@@ -63,7 +75,7 @@ void TextPage::draw(Renderer& renderer) {
     const int16_t x = direction_ == TextScrollDirection::Left
         ? static_cast<int16_t>(80 - travel)
         : static_cast<int16_t>(travel - textWidth);
-    renderer.drawText(x, 5, message_, gray);
+    renderer.drawText(static_cast<int16_t>(x + offsetX_), static_cast<int16_t>(5 + offsetY_), message_, gray);
     return;
   }
 
@@ -72,5 +84,6 @@ void TextPage::draw(Renderer& renderer) {
   options.maxHeight = 16;
   options.lineSpacing = 1;
   options.align = align_;
-  renderer.drawTextBox(0, 0, options, message_, gray);
+  options.valign = valign_;
+  renderer.drawTextBox(offsetX_, offsetY_, options, message_, gray);
 }

@@ -8,6 +8,7 @@
 #include "core/EventBus.h"
 #include "core/RuntimeStats.h"
 #include "display/DisplayDriver.h"
+#include "display/Font.h"
 #include "display/FrameBuffer5.h"
 #include "display/Renderer.h"
 #include "network/HttpServer.h"
@@ -15,6 +16,7 @@
 #include "network/OtaService.h"
 #include "network/WifiManager.h"
 #include "pages/ClockPage.h"
+#include "pages/CountdownPage.h"
 #include "pages/DeathDatesPage.h"
 #include "pages/DiagnosticsPage.h"
 #include "pages/DemoPage.h"
@@ -41,16 +43,23 @@ public:
 
   void begin();
   // Switches the physical display to a different Page — id maps to
-  // 0=Demo, 1=Clock, 2=Text, 3=Diagnostics, 4=DeathDates (see
+  // 0=Demo, 1=Clock, 2=Text, 3=Diagnostics, 4=DeathDates, 5=Countdown (see
   // pageById()). Calls leave() on the outgoing page and enter() on the
   // incoming one, matching Page's existing lifecycle hooks. A pageId with
   // no mapping (or the currently-active one) is a no-op.
   void setActivePage(uint8_t pageId);
+  // Loads /fonts/<name>.font from LittleFS and, if it parses, makes it the
+  // active Renderer font. On failure (missing/corrupt file, LittleFS not
+  // mounted) logs and leaves whatever font was active before — see
+  // Font.h's class comment for why a failed load doesn't blank the
+  // display's text.
+  void setFont(const String& name);
 
   DemoPage& demoPage() { return demoPage_; }
   DiagnosticsPage& diagnosticsPage() { return diagnosticsPage_; }
   TextPage& textPage() { return textPage_; }
   ClockPage& clockPage() { return clockPage_; }
+  CountdownPage& countdownPage() { return countdownPage_; }
 
 private:
   static void appTaskEntry(void* arg);
@@ -72,6 +81,7 @@ private:
   OtaService ota_;
   DisplayDriver display_;
   Renderer renderer_;
+  Font font_;
   uint8_t frontStorage_[kBufferSize] = {0};
   uint8_t backStorage_[kBufferSize] = {0};
   FrameBuffer5 frontBuffer_;
@@ -81,6 +91,7 @@ private:
   TextPage textPage_;
   ClockPage clockPage_;
   DeathDatesPage deathDatesPage_;
+  CountdownPage countdownPage_;
   Page* activePage_ = nullptr;
   uint8_t activePageId_ = 0;
   uint32_t lastFrameAtUs_ = 0;

@@ -347,9 +347,18 @@ void DemoPage::draw(Renderer& renderer) {
       renderer.drawLine(79, 0, 0, 15, GrayLevels::shade(2, 3));
       renderer.fillRect(30, 4, 20, 8, GrayLevels::shade(1, 3));
       break;
-    case DemoSceneId::Text:
-      renderer.drawText(2, 5, String("DEMO TEXT"), breathingShade(elapsed, 1600UL));
+    case DemoSceneId::Text: {
+      // Vertically centered against the active font's actual glyph height
+      // instead of a hardcoded y=5 — re-centers automatically if the font
+      // is switched to one with a different height.
+      TextLayoutOptions options;
+      options.maxWidth = 78;
+      options.maxHeight = 16;
+      options.align = HorizontalAlign::Center;
+      options.valign = VerticalAlign::Middle;
+      renderer.drawTextBox(1, 0, options, String("DEMO TEXT"), breathingShade(elapsed, 1600UL));
       break;
+    }
     case DemoSceneId::MultilineText: {
       // Text is taller than the 16px display, so it scrolls upward from
       // below the bottom edge to above the top edge, then loops — letting

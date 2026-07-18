@@ -1,6 +1,7 @@
 #include "network/HttpServer.h"
 
 #include <ArduinoJson.h>
+#include <LittleFS.h>
 
 #include "core/Application.h"
 #include "display/DisplayDriver.h"
@@ -10,302 +11,11 @@
 #include "time/ClockService.h"
 #include "util/Logger.h"
 
-namespace {
-// Bootstrap itself loads from a CDN (only the browser fetches it, not this
-// device), so this page is a few KB, not ~90KB — small enough that the
-// throughput ceiling that made the old ESP-DASH page unusable doesn't
-// matter here. Status values are populated client-side by polling
-// /api/status rather than a server-push websocket.
-const char kStatusPageHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>matrix-display-2026</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="p-3">
-<div class="container" style="max-width: 480px;">
-  <h3 class="mb-4">matrix-display-2026</h3>
-
-  <div class="card mb-3">
-    <div class="card-body">
-      <h6 class="card-subtitle mb-3 text-body-secondary">Status</h6>
-      <div class="d-flex justify-content-between"><span>WiFi</span><span id="wifiState">-</span></div>
-      <div class="d-flex justify-content-between"><span>SSID</span><span id="ssid">-</span></div>
-      <div class="d-flex justify-content-between"><span>IP</span><span id="ip">-</span></div>
-      <div class="d-flex justify-content-between"><span>Clock</span><span id="clock">-</span></div>
-      <div class="d-flex justify-content-between"><span>FPS</span><span id="fps">-</span></div>
-      <div class="d-flex justify-content-between"><span>Uptime</span><span id="uptime">-</span></div>
-    </div>
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-body">
-      <h6 class="card-subtitle mb-3 text-body-secondary">Controls</h6>
-      <div class="mb-3 form-check form-switch">
-        <input class="form-check-input" type="checkbox" role="switch" id="powerSwitch">
-        <label class="form-check-label" for="powerSwitch">Power</label>
-      </div>
-      <label for="brightnessRange" class="form-label">Brightness (<span id="brightnessValue">-</span>)</label>
-      <input type="range" class="form-range" min="1" max="255" id="brightnessRange">
-
-      <label for="paletteRange" class="form-label mt-2">Gray levels (<span id="paletteValue">-</span>)</label>
-      <input type="range" class="form-range" min="2" max="32" id="paletteRange">
-
-      <label for="speedRange" class="form-label mt-2">Animation speed (<span id="speedValue">-</span>%)</label>
-      <input type="range" class="form-range" min="10" max="400" id="speedRange">
-    </div>
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-body">
-      <h6 class="card-subtitle mb-3 text-body-secondary">Page</h6>
-      <select class="form-select mb-3" id="pageSelect">
-        <option value="0">Demo</option>
-        <option value="1">Clock</option>
-        <option value="2">Text</option>
-        <option value="3">Diagnostics</option>
-        <option value="4">Death Dates</option>
-      </select>
-
-      <div id="pane-1" class="page-pane d-none">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" role="switch" id="clockAnalogSwitch">
-          <label class="form-check-label" for="clockAnalogSwitch">Analog clock</label>
-        </div>
-      </div>
-
-      <div id="pane-2" class="page-pane d-none">
-        <label for="textMessageInput" class="form-label">Message</label>
-        <textarea class="form-control mb-2" id="textMessageInput" rows="2"></textarea>
-        <label for="textAlignSelect" class="form-label">Position</label>
-        <select class="form-select mb-2" id="textAlignSelect">
-          <option value="0">Left</option>
-          <option value="1">Center</option>
-          <option value="2">Right</option>
-        </select>
-        <label for="textAnimSelect" class="form-label">Animation</label>
-        <select class="form-select mb-2" id="textAnimSelect">
-          <option value="0">Fixed</option>
-          <option value="1">Marquee</option>
-        </select>
-        <label for="textDirSelect" class="form-label">Marquee direction</label>
-        <select class="form-select mb-2" id="textDirSelect">
-          <option value="0">Left (&larr;)</option>
-          <option value="1">Right (&rarr;)</option>
-        </select>
-        <label for="textEffectSelect" class="form-label">Appear effect</label>
-        <select class="form-select mb-2" id="textEffectSelect">
-          <option value="0">None</option>
-          <option value="1">Fade in</option>
-        </select>
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="textMessageApply">Apply message</button>
-      </div>
-
-      <div id="pane-0" class="page-pane d-none">
-        <label for="demoSceneSelect" class="form-label">Scene</label>
-        <select class="form-select" id="demoSceneSelect">
-          <option value="-1">Auto-rotate</option>
-          <option value="0">Fill</option>
-          <option value="1">Grayscale</option>
-          <option value="2">Primitives</option>
-          <option value="3">Text</option>
-          <option value="4">MultilineText</option>
-          <option value="5">Clock</option>
-          <option value="6">Bitmap</option>
-          <option value="7">Transition</option>
-          <option value="8">Checkerboard</option>
-          <option value="9">EdgeStress</option>
-          <option value="10">Diagnostics</option>
-          <option value="11">Marquee</option>
-          <option value="12">BouncingBall</option>
-          <option value="13">SparklingHearts</option>
-          <option value="14">Snake</option>
-          <option value="15">SpaceInvaders</option>
-          <option value="16">Tetris</option>
-          <option value="17">Pong</option>
-          <option value="18">Mario</option>
-          <option value="19">Fireworks</option>
-        </select>
-      </div>
-
-      <div id="pane-3" class="page-pane d-none">
-        <label for="diagViewSelect" class="form-label">View</label>
-        <select class="form-select" id="diagViewSelect">
-          <option value="0">Overview</option>
-          <option value="1">Render timing</option>
-          <option value="2">Scan timing</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-body">
-      <h6 class="card-subtitle mb-3 text-body-secondary">Network</h6>
-      <a href="/wifi" class="btn btn-outline-secondary btn-sm">Configure WiFi</a>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-body">
-      <h6 class="card-subtitle mb-3 text-body-secondary">Diagnostics (raw /api/status)</h6>
-      <table class="table table-sm table-borderless mb-0" style="font-size: 0.85rem;">
-        <tbody id="diagnosticsTable"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<script>
-let suppressUntil = 0;
-
-function refresh() {
-  fetch('/api/status').then(function (r) { return r.json(); }).then(function (data) {
-    document.getElementById('wifiState').textContent = data.apMode ? 'AP mode' : data.wifiState;
-    document.getElementById('ssid').textContent = data.ssid;
-    document.getElementById('ip').textContent = data.ip;
-    document.getElementById('clock').textContent = data.timeSynced ? (data.time + ' ' + data.date) : 'not synced';
-    document.getElementById('fps').textContent = data.fps;
-    document.getElementById('uptime').textContent = Math.round(data.uptimeMs / 1000) + 's';
-    if (Date.now() > suppressUntil) {
-      document.getElementById('powerSwitch').checked = data.powerOn;
-      document.getElementById('brightnessRange').value = Math.max(1, data.brightness);
-      document.getElementById('brightnessValue').textContent = data.brightness;
-      document.getElementById('paletteRange').value = data.paletteLevelCount;
-      document.getElementById('paletteValue').textContent = data.paletteLevelCount;
-      document.getElementById('speedRange').value = data.animationSpeedPercent;
-      document.getElementById('speedValue').textContent = data.animationSpeedPercent;
-
-      document.getElementById('pageSelect').value = data.activePageId;
-      showPane(data.activePageId);
-      document.getElementById('clockAnalogSwitch').checked = data.clockAnalogMode;
-      document.getElementById('textMessageInput').value = data.textMessage;
-      document.getElementById('textAlignSelect').value = data.textAlign;
-      document.getElementById('textAnimSelect').value = data.textAnimMode;
-      document.getElementById('textDirSelect').value = data.textDirection;
-      document.getElementById('textEffectSelect').value = data.textEffect;
-      document.getElementById('demoSceneSelect').value = (data.demoFixedScene === 255) ? -1 : data.demoFixedScene;
-      document.getElementById('diagViewSelect').value = data.diagView;
-    }
-
-    const rateFields = ['fps', 'refreshHz', 'driverRefreshHz'];
-    const usFields = ['renderLatencyUs', 'publishLatencyUs', 'scanStepMaxUs', 'scanStepLastUs', 'waitStepLastUs', 'gpioStepLastUs', 'rearmStepLastUs'];
-    const counterFields = ['scanUnderruns', 'driverScanUnderruns', 'droppedPresents', 'droppedEvents'];
-
-    function classify(key, value) {
-      if (rateFields.indexOf(key) !== -1) {
-        if (value >= 50) return 'text-success';
-        if (value >= 20) return 'text-warning';
-        return 'text-danger';
-      }
-      if (usFields.indexOf(key) !== -1) {
-        if (value < 1000) return 'text-success';
-        if (value < 10000) return 'text-warning';
-        return 'text-danger';
-      }
-      if (counterFields.indexOf(key) !== -1) {
-        if (value < 100) return 'text-success';
-        if (value < 10000) return 'text-warning';
-        return 'text-danger';
-      }
-      if (key === 'wifiState') {
-        return value === 'connected' ? 'text-success' : 'text-warning';
-      }
-      if (key === 'timeSynced') {
-        return value ? 'text-success' : 'text-warning';
-      }
-      return '';
-    }
-
-    const rows = Object.keys(data).sort().map(function (key) {
-      const cls = classify(key, data[key]);
-      return '<tr><td class="text-body-secondary">' + key + '</td><td class="text-end ' + cls + '">' + data[key] + '</td></tr>';
-    });
-    document.getElementById('diagnosticsTable').innerHTML = rows.join('');
-  }).catch(function () {});
-}
-
-function pushSettings(partial) {
-  suppressUntil = Date.now() + 2000;
-  fetch('/api/settings', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(partial)
-  }).catch(function () {});
-}
-
-function showPane(pageId) {
-  document.querySelectorAll('.page-pane').forEach(function (el) {
-    el.classList.add('d-none');
-  });
-  const pane = document.getElementById('pane-' + pageId);
-  if (pane) {
-    pane.classList.remove('d-none');
-  }
-}
-
-document.getElementById('pageSelect').addEventListener('change', function (e) {
-  const pageId = parseInt(e.target.value, 10);
-  showPane(pageId);
-  pushSettings({activePageId: pageId});
-});
-document.getElementById('clockAnalogSwitch').addEventListener('change', function (e) {
-  pushSettings({clockAnalogMode: e.target.checked});
-});
-document.getElementById('textMessageApply').addEventListener('click', function () {
-  pushSettings({textMessage: document.getElementById('textMessageInput').value});
-});
-document.getElementById('textAlignSelect').addEventListener('change', function (e) {
-  pushSettings({textAlign: parseInt(e.target.value, 10)});
-});
-document.getElementById('textAnimSelect').addEventListener('change', function (e) {
-  pushSettings({textAnimMode: parseInt(e.target.value, 10)});
-});
-document.getElementById('textDirSelect').addEventListener('change', function (e) {
-  pushSettings({textDirection: parseInt(e.target.value, 10)});
-});
-document.getElementById('textEffectSelect').addEventListener('change', function (e) {
-  pushSettings({textEffect: parseInt(e.target.value, 10)});
-});
-document.getElementById('demoSceneSelect').addEventListener('change', function (e) {
-  pushSettings({demoFixedScene: parseInt(e.target.value, 10)});
-});
-document.getElementById('diagViewSelect').addEventListener('change', function (e) {
-  pushSettings({diagView: parseInt(e.target.value, 10)});
-});
-
-document.getElementById('powerSwitch').addEventListener('change', function (e) {
-  pushSettings({powerOn: e.target.checked});
-});
-document.getElementById('brightnessRange').addEventListener('input', function (e) {
-  document.getElementById('brightnessValue').textContent = e.target.value;
-});
-document.getElementById('brightnessRange').addEventListener('change', function (e) {
-  pushSettings({brightness: parseInt(e.target.value, 10)});
-});
-document.getElementById('paletteRange').addEventListener('input', function (e) {
-  document.getElementById('paletteValue').textContent = e.target.value;
-});
-document.getElementById('paletteRange').addEventListener('change', function (e) {
-  pushSettings({paletteLevelCount: parseInt(e.target.value, 10)});
-});
-document.getElementById('speedRange').addEventListener('input', function (e) {
-  document.getElementById('speedValue').textContent = e.target.value;
-});
-document.getElementById('speedRange').addEventListener('change', function (e) {
-  pushSettings({animationSpeedPercent: parseInt(e.target.value, 10)});
-});
-
-refresh();
-setInterval(refresh, 5000);
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
-)HTML";
-}
+// HTML/JS now live on LittleFS (data/index.html, data/wifi.html — see
+// setupStatusPageRoute()/setupWifiRoute()) rather than compiled into the
+// firmware as PROGMEM strings. Upload them separately via
+// `pio run --target uploadfs` (writes the LittleFS partition image; does
+// NOT touch the app firmware) whenever data/ changes.
 
 HttpServer::HttpServer(Settings& settings, WifiManager& wifi, DisplayDriver& display, ClockService& clock, RuntimeStats& stats, Application& app)
     : settings_(settings), wifi_(wifi), display_(display), clock_(clock), stats_(stats), app_(app) {}
@@ -334,7 +44,11 @@ bool HttpServer::running() const {
 
 void HttpServer::setupStatusPageRoute() {
   server_.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-    request->send(200, "text/html", kStatusPageHtml);
+    if (!LittleFS.exists("/index.html")) {
+      request->send(500, "text/plain", "index.html missing from LittleFS — run 'pio run --target uploadfs'");
+      return;
+    }
+    request->send(LittleFS, "/index.html", "text/html");
   });
 }
 
@@ -349,15 +63,29 @@ void HttpServer::setupApiRoutes() {
     doc["powerOn"] = settings_.values().powerOn;
     doc["paletteLevelCount"] = settings_.values().paletteLevelCount;
     doc["animationSpeedPercent"] = settings_.values().animationSpeedPercent;
+    doc["fontName"] = settings_.values().fontName;
     doc["activePageId"] = settings_.values().activePageId;
-    doc["clockAnalogMode"] = settings_.values().clockAnalogMode;
+    doc["clockFaceMode"] = settings_.values().clockFaceMode;
+    doc["clockDisplayMode"] = settings_.values().clockDisplayMode;
+    doc["clockAlternateIntervalMs"] = settings_.values().clockAlternateIntervalMs;
+    doc["clockBlinkColon"] = settings_.values().clockBlinkColon;
+    doc["clockAlign"] = settings_.values().clockAlign;
+    doc["clockValign"] = settings_.values().clockValign;
     doc["textMessage"] = settings_.values().textMessage;
     doc["textAlign"] = settings_.values().textAlign;
+    doc["textValign"] = settings_.values().textValign;
+    doc["textOffsetX"] = settings_.values().textOffsetX;
+    doc["textOffsetY"] = settings_.values().textOffsetY;
     doc["textAnimMode"] = settings_.values().textAnimMode;
     doc["textDirection"] = settings_.values().textDirection;
     doc["textEffect"] = settings_.values().textEffect;
     doc["demoFixedScene"] = settings_.values().demoFixedScene;
     doc["diagView"] = settings_.values().diagView;
+    doc["countdownYear"] = settings_.values().countdownYear;
+    doc["countdownMonth"] = settings_.values().countdownMonth;
+    doc["countdownDay"] = settings_.values().countdownDay;
+    doc["countdownHour"] = settings_.values().countdownHour;
+    doc["countdownMinute"] = settings_.values().countdownMinute;
     doc["fps"] = stats_.appFps;
     doc["refreshHz"] = stats_.refreshHz;
     doc["scanUnderruns"] = stats_.scanUnderruns;
@@ -410,14 +138,39 @@ void HttpServer::setupApiRoutes() {
       app_.demoPage().setAnimationSpeedPercent(percent);
     }
     if (body["activePageId"].is<int>()) {
-      const uint8_t pageId = static_cast<uint8_t>(constrain(body["activePageId"].as<int>(), 0, 4));
+      const uint8_t pageId = static_cast<uint8_t>(constrain(body["activePageId"].as<int>(), 0, 5));
       settings_.setActivePageId(pageId);
       app_.setActivePage(pageId);
     }
-    if (body["clockAnalogMode"].is<bool>()) {
-      const bool analog = body["clockAnalogMode"].as<bool>();
-      settings_.setClockAnalogMode(analog);
-      app_.clockPage().setAnalogMode(analog);
+    if (body["clockFaceMode"].is<int>()) {
+      const uint8_t mode = static_cast<uint8_t>(constrain(body["clockFaceMode"].as<int>(), 0, 2));
+      settings_.setClockFaceMode(mode);
+      app_.clockPage().setFaceMode(static_cast<ClockFaceMode>(mode));
+    }
+    if (body["clockDisplayMode"].is<int>()) {
+      const uint8_t mode = static_cast<uint8_t>(constrain(body["clockDisplayMode"].as<int>(), 0, 2));
+      settings_.setClockDisplayMode(mode);
+      app_.clockPage().setDisplayMode(static_cast<ClockDisplayMode>(mode));
+    }
+    if (body["clockAlternateIntervalMs"].is<int>()) {
+      const uint32_t intervalMs = static_cast<uint32_t>(constrain(body["clockAlternateIntervalMs"].as<int>(), 250, 60000));
+      settings_.setClockAlternateIntervalMs(intervalMs);
+      app_.clockPage().setAlternateIntervalMs(intervalMs);
+    }
+    if (body["clockBlinkColon"].is<bool>()) {
+      const bool blink = body["clockBlinkColon"].as<bool>();
+      settings_.setClockBlinkColon(blink);
+      app_.clockPage().setBlinkColon(blink);
+    }
+    if (body["clockAlign"].is<int>()) {
+      const uint8_t align = static_cast<uint8_t>(constrain(body["clockAlign"].as<int>(), 0, 2));
+      settings_.setClockAlign(align);
+      app_.clockPage().setAlign(static_cast<HorizontalAlign>(align));
+    }
+    if (body["clockValign"].is<int>()) {
+      const uint8_t valign = static_cast<uint8_t>(constrain(body["clockValign"].as<int>(), 0, 2));
+      settings_.setClockValign(valign);
+      app_.clockPage().setVerticalAlign(static_cast<VerticalAlign>(valign));
     }
     if (body["textMessage"].is<const char*>()) {
       const String message = body["textMessage"].as<String>();
@@ -428,6 +181,21 @@ void HttpServer::setupApiRoutes() {
       const uint8_t align = static_cast<uint8_t>(constrain(body["textAlign"].as<int>(), 0, 2));
       settings_.setTextAlign(align);
       app_.textPage().setAlign(static_cast<HorizontalAlign>(align));
+    }
+    if (body["textValign"].is<int>()) {
+      const uint8_t valign = static_cast<uint8_t>(constrain(body["textValign"].as<int>(), 0, 2));
+      settings_.setTextValign(valign);
+      app_.textPage().setVerticalAlign(static_cast<VerticalAlign>(valign));
+    }
+    if (body["textOffsetX"].is<int>()) {
+      const int16_t offsetX = static_cast<int16_t>(constrain(body["textOffsetX"].as<int>(), -80, 80));
+      settings_.setTextOffsetX(offsetX);
+      app_.textPage().setOffsetX(offsetX);
+    }
+    if (body["textOffsetY"].is<int>()) {
+      const int16_t offsetY = static_cast<int16_t>(constrain(body["textOffsetY"].as<int>(), -16, 16));
+      settings_.setTextOffsetY(offsetY);
+      app_.textPage().setOffsetY(offsetY);
     }
     if (body["textAnimMode"].is<int>()) {
       const uint8_t mode = static_cast<uint8_t>(constrain(body["textAnimMode"].as<int>(), 0, 1));
@@ -455,6 +223,26 @@ void HttpServer::setupApiRoutes() {
       settings_.setDiagView(view);
       app_.diagnosticsPage().setView(static_cast<DiagnosticsPage::View>(view));
     }
+    if (body["countdownYear"].is<int>() || body["countdownMonth"].is<int>() || body["countdownDay"].is<int>()
+        || body["countdownHour"].is<int>() || body["countdownMinute"].is<int>()) {
+      const uint16_t year = static_cast<uint16_t>(constrain(
+          body["countdownYear"].is<int>() ? body["countdownYear"].as<int>() : settings_.values().countdownYear, 2024, 2100));
+      const uint8_t month = static_cast<uint8_t>(constrain(
+          body["countdownMonth"].is<int>() ? body["countdownMonth"].as<int>() : settings_.values().countdownMonth, 1, 12));
+      const uint8_t day = static_cast<uint8_t>(constrain(
+          body["countdownDay"].is<int>() ? body["countdownDay"].as<int>() : settings_.values().countdownDay, 1, 31));
+      const uint8_t hour = static_cast<uint8_t>(constrain(
+          body["countdownHour"].is<int>() ? body["countdownHour"].as<int>() : settings_.values().countdownHour, 0, 23));
+      const uint8_t minute = static_cast<uint8_t>(constrain(
+          body["countdownMinute"].is<int>() ? body["countdownMinute"].as<int>() : settings_.values().countdownMinute, 0, 59));
+      settings_.setCountdownTarget(year, month, day, hour, minute);
+      app_.countdownPage().setTarget(year, month, day, hour, minute);
+    }
+    if (body["fontName"].is<const char*>()) {
+      const String name = body["fontName"].as<String>();
+      settings_.setFontName(name);
+      app_.setFont(name);
+    }
     request->send(200, "application/json", "{\"ok\":true}");
   });
   settingsHandler->setMethod(HTTP_POST);
@@ -462,25 +250,16 @@ void HttpServer::setupApiRoutes() {
 }
 
 void HttpServer::setupWifiRoute() {
-  server_.on("/wifi", HTTP_GET, [this](AsyncWebServerRequest* request) {
-    String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                  "<title>WiFi setup</title></head><body>"
-                  "<h3>matrix-display-2026 - WiFi setup</h3>";
-    html += "<p>Status: ";
-    html += wifi_.state();
-    if (wifi_.isApMode()) {
-      html += " (provisioning AP: ";
-      html += wifi_.apSsid();
-      html += ")";
+  // Static form (data/wifi.html) — pulls current WiFi state via the
+  // already-existing /api/status (wifiState/apMode/ssid) with client-side
+  // fetch() instead of server-generated HTML, matching index.html's
+  // pattern. Only the credential-saving POST stays a server-side handler.
+  server_.on("/wifi", HTTP_GET, [](AsyncWebServerRequest* request) {
+    if (!LittleFS.exists("/wifi.html")) {
+      request->send(500, "text/plain", "wifi.html missing from LittleFS — run 'pio run --target uploadfs'");
+      return;
     }
-    html += "</p>";
-    html += "<form method='POST' action='/wifi'>"
-            "SSID:<br><input name='ssid' value='";
-    html += settings_.values().wifiSsid;
-    html += "'><br>Password:<br><input name='password' type='password'><br><br>"
-            "<button type='submit'>Save &amp; Connect</button>"
-            "</form></body></html>";
-    request->send(200, "text/html", html);
+    request->send(LittleFS, "/wifi.html", "text/html");
   });
 
   server_.on("/wifi", HTTP_POST, [this](AsyncWebServerRequest* request) {
@@ -488,7 +267,6 @@ void HttpServer::setupWifiRoute() {
     const String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
     settings_.setWifiCredentials(ssid, password);
     wifi_.applyCredentials(ssid, password);
-    request->send(200, "text/html", "<!DOCTYPE html><html><body>Saved. Reconnecting&hellip; "
-                                     "<a href='/wifi'>back</a></body></html>");
+    request->send(200, "application/json", "{\"ok\":true}");
   });
 }

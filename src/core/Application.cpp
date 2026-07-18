@@ -1,5 +1,7 @@
 #include "core/Application.h"
 
+#include <LittleFS.h>
+
 #include "util/Logger.h"
 
 Application::Application()
@@ -10,7 +12,8 @@ Application::Application()
       demoPage_(clock_, stats_),
       diagnosticsPage_(stats_),
       textPage_(String("LINE1\nLINE2")),
-      clockPage_(clock_) {}
+      clockPage_(clock_),
+      countdownPage_(clock_) {}
 
 void Application::begin() {
   Logger::begin(115200);
@@ -18,6 +21,16 @@ void Application::begin() {
 
   settings_.begin();
   clock_.begin();
+
+  // Mounted once, here, before anything that reads from it (HttpServer's
+  // static file serving, setFont() below) — LittleFS.begin() is safe to
+  // call again elsewhere (idempotent, returns true if already mounted),
+  // but only this call formats on first boot (true == formatOnFail).
+  if (!LittleFS.begin(true)) {
+    Logger::info(String("LittleFS mount FAILED — status page and custom fonts will be unavailable"));
+  }
+  countdownPage_.begin();
+
   wifi_.begin(settings_.values().hostname, settings_.values().wifiSsid, settings_.values().wifiPassword);
   http_.begin();
   mqtt_.begin();
@@ -33,15 +46,28 @@ void Application::begin() {
   const uint8_t storedScene = settings_.values().demoFixedScene;
   demoPage_.setFixedScene(storedScene == 255U ? -1 : static_cast<int8_t>(storedScene));
 
-  clockPage_.setAnalogMode(settings_.values().clockAnalogMode);
+  clockPage_.setFaceMode(static_cast<ClockFaceMode>(settings_.values().clockFaceMode));
+  clockPage_.setDisplayMode(static_cast<ClockDisplayMode>(settings_.values().clockDisplayMode));
+  clockPage_.setAlternateIntervalMs(settings_.values().clockAlternateIntervalMs);
+  clockPage_.setBlinkColon(settings_.values().clockBlinkColon);
+  clockPage_.setAlign(static_cast<HorizontalAlign>(settings_.values().clockAlign));
+  clockPage_.setVerticalAlign(static_cast<VerticalAlign>(settings_.values().clockValign));
 
   textPage_.setMessage(settings_.values().textMessage);
   textPage_.setAlign(static_cast<HorizontalAlign>(settings_.values().textAlign));
+  textPage_.setVerticalAlign(static_cast<VerticalAlign>(settings_.values().textValign));
+  textPage_.setOffsetX(settings_.values().textOffsetX);
+  textPage_.setOffsetY(settings_.values().textOffsetY);
   textPage_.setAnimMode(static_cast<TextAnimMode>(settings_.values().textAnimMode));
   textPage_.setDirection(static_cast<TextScrollDirection>(settings_.values().textDirection));
   textPage_.setEffect(static_cast<TextEffect>(settings_.values().textEffect));
 
   diagnosticsPage_.setView(static_cast<DiagnosticsPage::View>(settings_.values().diagView));
+
+  countdownPage_.setTarget(settings_.values().countdownYear, settings_.values().countdownMonth,
+      settings_.values().countdownDay, settings_.values().countdownHour, settings_.values().countdownMinute);
+
+  setFont(settings_.values().fontName);
 
   activePage_ = pageById(settings_.values().activePageId);
   activePageId_ = settings_.values().activePageId;
@@ -70,6 +96,7 @@ Page* Application::pageById(uint8_t id) {
     case 2: return &textPage_;
     case 3: return &diagnosticsPage_;
     case 4: return &deathDatesPage_;
+    case 5: return &countdownPage_;
     default: return nullptr;
   }
 }
@@ -85,6 +112,16 @@ void Application::setActivePage(uint8_t pageId) {
   activePage_ = next;
   activePageId_ = pageId;
   activePage_->enter();
+}
+
+void Application::setFont(const String& name) {
+  const String path = String("/fonts/") + name + ".font";
+  if (font_.loadFromFile(path)) {
+    renderer_.setFont(&font_);
+  }
+  // On failure, font_.isLoaded() is false and Renderer already falls
+  // back to its compiled-in glyph table on its own — no need to touch
+  // renderer_'s font pointer either way here.
 }
 
 void Application::appTaskEntry(void* arg) {

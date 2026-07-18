@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>matrix-display-2026</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="p-3">
+<div class="container" style="max-width: 480px;">
+  <h3 class="mb-4">matrix-display-2026</h3>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Status</h6>
+      <div class="d-flex justify-content-between"><span>WiFi</span><span id="wifiState">-</span></div>
+      <div class="d-flex justify-content-between"><span>SSID</span><span id="ssid">-</span></div>
+      <div class="d-flex justify-content-between"><span>IP</span><span id="ip">-</span></div>
+      <div class="d-flex justify-content-between"><span>Clock</span><span id="clock">-</span></div>
+      <div class="d-flex justify-content-between"><span>FPS</span><span id="fps">-</span></div>
+      <div class="d-flex justify-content-between"><span>Uptime</span><span id="uptime">-</span></div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Controls</h6>
+      <div class="mb-3 form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch" id="powerSwitch">
+        <label class="form-check-label" for="powerSwitch">Power</label>
+      </div>
+      <label for="brightnessRange" class="form-label">Brightness (<span id="brightnessValue">-</span>)</label>
+      <input type="range" class="form-range" min="1" max="255" id="brightnessRange">
+
+      <label for="paletteRange" class="form-label mt-2">Gray levels (<span id="paletteValue">-</span>)</label>
+      <input type="range" class="form-range" min="2" max="32" id="paletteRange">
+
+      <label for="speedRange" class="form-label mt-2">Animation speed (<span id="speedValue">-</span>%)</label>
+      <input type="range" class="form-range" min="10" max="400" id="speedRange">
+
+      <label for="fontSelect" class="form-label mt-2">Font</label>
+      <select class="form-select" id="fontSelect">
+        <option value="classic3x5">Classic (3x5)</option>
+        <option value="wide6x10">Wide (6x10)</option>
+        <option value="led7x5">LED dot-matrix (5x7)</option>
+        <option value="dotmatrix7x4">Compact dot-matrix (4x7)</option>
+        <option value="dot8x8">Square dot (8x8)</option>
+        <option value="ledfull16">Full height LED (8x16)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Page</h6>
+      <select class="form-select mb-3" id="pageSelect">
+        <option value="0">Demo</option>
+        <option value="1">Clock</option>
+        <option value="2">Text</option>
+        <option value="3">Diagnostics</option>
+        <option value="4">Death Dates</option>
+        <option value="5">Countdown</option>
+      </select>
+
+      <div id="pane-1" class="page-pane d-none">
+        <label for="clockFaceSelect" class="form-label">Face</label>
+        <select class="form-select mb-2" id="clockFaceSelect">
+          <option value="0">Digital</option>
+          <option value="1">Analog</option>
+          <option value="2">Analog + text</option>
+        </select>
+        <label for="clockDisplaySelect" class="form-label">Show</label>
+        <select class="form-select mb-2" id="clockDisplaySelect">
+          <option value="0">Time only</option>
+          <option value="1">Date only</option>
+          <option value="2">Alternate time/date</option>
+        </select>
+        <label for="clockAltIntervalInput" class="form-label">Alternate interval (ms)</label>
+        <input type="number" class="form-control mb-2" id="clockAltIntervalInput" min="250" max="60000" step="250">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" role="switch" id="clockBlinkSwitch">
+          <label class="form-check-label" for="clockBlinkSwitch">Blink colon</label>
+        </div>
+        <label for="clockAlignSelect" class="form-label">Horizontal align</label>
+        <select class="form-select mb-2" id="clockAlignSelect">
+          <option value="0">Left</option>
+          <option value="1">Center</option>
+          <option value="2">Right</option>
+        </select>
+        <label for="clockValignSelect" class="form-label">Vertical align</label>
+        <select class="form-select mb-2" id="clockValignSelect">
+          <option value="0">Top</option>
+          <option value="1">Middle</option>
+          <option value="2">Bottom</option>
+        </select>
+      </div>
+
+      <div id="pane-2" class="page-pane d-none">
+        <label for="textMessageInput" class="form-label">Message</label>
+        <textarea class="form-control mb-2" id="textMessageInput" rows="2"></textarea>
+        <label for="textAlignSelect" class="form-label">Horizontal align</label>
+        <select class="form-select mb-2" id="textAlignSelect">
+          <option value="0">Left</option>
+          <option value="1">Center</option>
+          <option value="2">Right</option>
+        </select>
+        <label for="textValignSelect" class="form-label">Vertical align</label>
+        <select class="form-select mb-2" id="textValignSelect">
+          <option value="0">Top</option>
+          <option value="1">Middle</option>
+          <option value="2">Bottom</option>
+        </select>
+        <label for="textOffsetXInput" class="form-label">Fine X offset (px)</label>
+        <input type="number" class="form-control mb-2" id="textOffsetXInput" min="-80" max="80" step="1">
+        <label for="textOffsetYInput" class="form-label">Fine Y offset (px)</label>
+        <input type="number" class="form-control mb-2" id="textOffsetYInput" min="-16" max="16" step="1">
+        <label for="textAnimSelect" class="form-label">Animation</label>
+        <select class="form-select mb-2" id="textAnimSelect">
+          <option value="0">Fixed</option>
+          <option value="1">Marquee</option>
+        </select>
+        <label for="textDirSelect" class="form-label">Marquee direction</label>
+        <select class="form-select mb-2" id="textDirSelect">
+          <option value="0">Left (&larr;)</option>
+          <option value="1">Right (&rarr;)</option>
+        </select>
+        <label for="textEffectSelect" class="form-label">Appear effect</label>
+        <select class="form-select mb-2" id="textEffectSelect">
+          <option value="0">None</option>
+          <option value="1">Fade in</option>
+        </select>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="textMessageApply">Apply message / offsets</button>
+      </div>
+
+      <div id="pane-5" class="page-pane d-none">
+        <p class="text-body-secondary small mb-2">Target date/time (local). Display granularity and font size narrow automatically as it approaches — once passed, it auto-rolls forward one year.</p>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label for="cdYearInput" class="form-label">Year</label>
+            <input type="number" class="form-control" id="cdYearInput" min="2024" max="2100">
+          </div>
+          <div class="col-6">
+            <label for="cdMonthInput" class="form-label">Month</label>
+            <input type="number" class="form-control" id="cdMonthInput" min="1" max="12">
+          </div>
+          <div class="col-6">
+            <label for="cdDayInput" class="form-label">Day</label>
+            <input type="number" class="form-control" id="cdDayInput" min="1" max="31">
+          </div>
+          <div class="col-6">
+            <label for="cdHourInput" class="form-label">Hour</label>
+            <input type="number" class="form-control" id="cdHourInput" min="0" max="23">
+          </div>
+          <div class="col-6">
+            <label for="cdMinuteInput" class="form-label">Minute</label>
+            <input type="number" class="form-control" id="cdMinuteInput" min="0" max="59">
+          </div>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="countdownApply">Apply target</button>
+      </div>
+
+      <div id="pane-0" class="page-pane d-none">
+        <label for="demoSceneSelect" class="form-label">Scene</label>
+        <select class="form-select" id="demoSceneSelect">
+          <option value="-1">Auto-rotate</option>
+          <option value="0">Fill</option>
+          <option value="1">Grayscale</option>
+          <option value="2">Primitives</option>
+          <option value="3">Text</option>
+          <option value="4">MultilineText</option>
+          <option value="5">Clock</option>
+          <option value="6">Bitmap</option>
+          <option value="7">Transition</option>
+          <option value="8">Checkerboard</option>
+          <option value="9">EdgeStress</option>
+          <option value="10">Diagnostics</option>
+          <option value="11">Marquee</option>
+          <option value="12">BouncingBall</option>
+          <option value="13">SparklingHearts</option>
+          <option value="14">Snake</option>
+          <option value="15">SpaceInvaders</option>
+          <option value="16">Tetris</option>
+          <option value="17">Pong</option>
+          <option value="18">Mario</option>
+          <option value="19">Fireworks</option>
+        </select>
+      </div>
+
+      <div id="pane-3" class="page-pane d-none">
+        <label for="diagViewSelect" class="form-label">View</label>
+        <select class="form-select" id="diagViewSelect">
+          <option value="0">Overview</option>
+          <option value="1">Render timing</option>
+          <option value="2">Scan timing</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Network</h6>
+      <a href="/wifi" class="btn btn-outline-secondary btn-sm">Configure WiFi</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h6 class="card-subtitle mb-3 text-body-secondary">Diagnostics (raw /api/status)</h6>
+      <table class="table table-sm table-borderless mb-0" style="font-size: 0.85rem;">
+        <tbody id="diagnosticsTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let suppressUntil = 0;
+
+function refresh() {
+  fetch('/api/status').then(function (r) { return r.json(); }).then(function (data) {
+    document.getElementById('wifiState').textContent = data.apMode ? 'AP mode' : data.wifiState;
+    document.getElementById('ssid').textContent = data.ssid;
+    document.getElementById('ip').textContent = data.ip;
+    document.getElementById('clock').textContent = data.timeSynced ? (data.time + ' ' + data.date) : 'not synced';
+    document.getElementById('fps').textContent = data.fps;
+    document.getElementById('uptime').textContent = Math.round(data.uptimeMs / 1000) + 's';
+    if (Date.now() > suppressUntil) {
+      document.getElementById('powerSwitch').checked = data.powerOn;
+      document.getElementById('brightnessRange').value = Math.max(1, data.brightness);
+      document.getElementById('brightnessValue').textContent = data.brightness;
+      document.getElementById('paletteRange').value = data.paletteLevelCount;
+      document.getElementById('paletteValue').textContent = data.paletteLevelCount;
+      document.getElementById('speedRange').value = data.animationSpeedPercent;
+      document.getElementById('speedValue').textContent = data.animationSpeedPercent;
+      document.getElementById('fontSelect').value = data.fontName;
+
+      document.getElementById('pageSelect').value = data.activePageId;
+      showPane(data.activePageId);
+      document.getElementById('clockFaceSelect').value = data.clockFaceMode;
+      document.getElementById('clockDisplaySelect').value = data.clockDisplayMode;
+      document.getElementById('clockAltIntervalInput').value = data.clockAlternateIntervalMs;
+      document.getElementById('clockBlinkSwitch').checked = data.clockBlinkColon;
+      document.getElementById('clockAlignSelect').value = data.clockAlign;
+      document.getElementById('clockValignSelect').value = data.clockValign;
+      document.getElementById('textMessageInput').value = data.textMessage;
+      document.getElementById('textAlignSelect').value = data.textAlign;
+      document.getElementById('textValignSelect').value = data.textValign;
+      document.getElementById('textOffsetXInput').value = data.textOffsetX;
+      document.getElementById('textOffsetYInput').value = data.textOffsetY;
+      document.getElementById('textAnimSelect').value = data.textAnimMode;
+      document.getElementById('textDirSelect').value = data.textDirection;
+      document.getElementById('textEffectSelect').value = data.textEffect;
+      document.getElementById('demoSceneSelect').value = (data.demoFixedScene === 255) ? -1 : data.demoFixedScene;
+      document.getElementById('diagViewSelect').value = data.diagView;
+      document.getElementById('cdYearInput').value = data.countdownYear;
+      document.getElementById('cdMonthInput').value = data.countdownMonth;
+      document.getElementById('cdDayInput').value = data.countdownDay;
+      document.getElementById('cdHourInput').value = data.countdownHour;
+      document.getElementById('cdMinuteInput').value = data.countdownMinute;
+    }
+
+    const rateFields = ['fps', 'refreshHz', 'driverRefreshHz'];
+    const usFields = ['renderLatencyUs', 'publishLatencyUs', 'scanStepMaxUs', 'scanStepLastUs', 'waitStepLastUs', 'gpioStepLastUs', 'rearmStepLastUs'];
+    const counterFields = ['scanUnderruns', 'driverScanUnderruns', 'droppedPresents', 'droppedEvents'];
+
+    function classify(key, value) {
+      if (rateFields.indexOf(key) !== -1) {
+        if (value >= 50) return 'text-success';
+        if (value >= 20) return 'text-warning';
+        return 'text-danger';
+      }
+      if (usFields.indexOf(key) !== -1) {
+        if (value < 1000) return 'text-success';
+        if (value < 10000) return 'text-warning';
+        return 'text-danger';
+      }
+      if (counterFields.indexOf(key) !== -1) {
+        if (value < 100) return 'text-success';
+        if (value < 10000) return 'text-warning';
+        return 'text-danger';
+      }
+      if (key === 'wifiState') {
+        return value === 'connected' ? 'text-success' : 'text-warning';
+      }
+      if (key === 'timeSynced') {
+        return value ? 'text-success' : 'text-warning';
+      }
+      return '';
+    }
+
+    const rows = Object.keys(data).sort().map(function (key) {
+      const cls = classify(key, data[key]);
+      return '<tr><td class="text-body-secondary">' + key + '</td><td class="text-end ' + cls + '">' + data[key] + '</td></tr>';
+    });
+    document.getElementById('diagnosticsTable').innerHTML = rows.join('');
+  }).catch(function () {});
+}
+
+function pushSettings(partial) {
+  suppressUntil = Date.now() + 2000;
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(partial)
+  }).catch(function () {});
+}
+
+function showPane(pageId) {
+  document.querySelectorAll('.page-pane').forEach(function (el) {
+    el.classList.add('d-none');
+  });
+  const pane = document.getElementById('pane-' + pageId);
+  if (pane) {
+    pane.classList.remove('d-none');
+  }
+}
+
+document.getElementById('pageSelect').addEventListener('change', function (e) {
+  const pageId = parseInt(e.target.value, 10);
+  showPane(pageId);
+  pushSettings({activePageId: pageId});
+});
+document.getElementById('clockFaceSelect').addEventListener('change', function (e) {
+  pushSettings({clockFaceMode: parseInt(e.target.value, 10)});
+});
+document.getElementById('clockDisplaySelect').addEventListener('change', function (e) {
+  pushSettings({clockDisplayMode: parseInt(e.target.value, 10)});
+});
+document.getElementById('clockAltIntervalInput').addEventListener('change', function (e) {
+  pushSettings({clockAlternateIntervalMs: parseInt(e.target.value, 10)});
+});
+document.getElementById('clockBlinkSwitch').addEventListener('change', function (e) {
+  pushSettings({clockBlinkColon: e.target.checked});
+});
+document.getElementById('clockAlignSelect').addEventListener('change', function (e) {
+  pushSettings({clockAlign: parseInt(e.target.value, 10)});
+});
+document.getElementById('clockValignSelect').addEventListener('change', function (e) {
+  pushSettings({clockValign: parseInt(e.target.value, 10)});
+});
+document.getElementById('textMessageApply').addEventListener('click', function () {
+  pushSettings({
+    textMessage: document.getElementById('textMessageInput').value,
+    textOffsetX: parseInt(document.getElementById('textOffsetXInput').value, 10) || 0,
+    textOffsetY: parseInt(document.getElementById('textOffsetYInput').value, 10) || 0
+  });
+});
+document.getElementById('textAlignSelect').addEventListener('change', function (e) {
+  pushSettings({textAlign: parseInt(e.target.value, 10)});
+});
+document.getElementById('textValignSelect').addEventListener('change', function (e) {
+  pushSettings({textValign: parseInt(e.target.value, 10)});
+});
+document.getElementById('textAnimSelect').addEventListener('change', function (e) {
+  pushSettings({textAnimMode: parseInt(e.target.value, 10)});
+});
+document.getElementById('textDirSelect').addEventListener('change', function (e) {
+  pushSettings({textDirection: parseInt(e.target.value, 10)});
+});
+document.getElementById('textEffectSelect').addEventListener('change', function (e) {
+  pushSettings({textEffect: parseInt(e.target.value, 10)});
+});
+document.getElementById('demoSceneSelect').addEventListener('change', function (e) {
+  pushSettings({demoFixedScene: parseInt(e.target.value, 10)});
+});
+document.getElementById('diagViewSelect').addEventListener('change', function (e) {
+  pushSettings({diagView: parseInt(e.target.value, 10)});
+});
+document.getElementById('fontSelect').addEventListener('change', function (e) {
+  pushSettings({fontName: e.target.value});
+});
+document.getElementById('countdownApply').addEventListener('click', function () {
+  pushSettings({
+    countdownYear: parseInt(document.getElementById('cdYearInput').value, 10),
+    countdownMonth: parseInt(document.getElementById('cdMonthInput').value, 10),
+    countdownDay: parseInt(document.getElementById('cdDayInput').value, 10),
+    countdownHour: parseInt(document.getElementById('cdHourInput').value, 10),
+    countdownMinute: parseInt(document.getElementById('cdMinuteInput').value, 10)
+  });
+});
+
+document.getElementById('powerSwitch').addEventListener('change', function (e) {
+  pushSettings({powerOn: e.target.checked});
+});
+document.getElementById('brightnessRange').addEventListener('input', function (e) {
+  document.getElementById('brightnessValue').textContent = e.target.value;
+});
+document.getElementById('brightnessRange').addEventListener('change', function (e) {
+  pushSettings({brightness: parseInt(e.target.value, 10)});
+});
+document.getElementById('paletteRange').addEventListener('input', function (e) {
+  document.getElementById('paletteValue').textContent = e.target.value;
+});
+document.getElementById('paletteRange').addEventListener('change', function (e) {
+  pushSettings({paletteLevelCount: parseInt(e.target.value, 10)});
+});
+document.getElementById('speedRange').addEventListener('input', function (e) {
+  document.getElementById('speedValue').textContent = e.target.value;
+});
+document.getElementById('speedRange').addEventListener('change', function (e) {
+  pushSettings({animationSpeedPercent: parseInt(e.target.value, 10)});
+});
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

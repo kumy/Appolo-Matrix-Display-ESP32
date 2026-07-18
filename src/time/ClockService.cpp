@@ -55,6 +55,10 @@ uint8_t ClockService::seconds() const {
   return static_cast<uint8_t>((nowMs_ / 1000UL) % 60UL);
 }
 
+time_t ClockService::epochSeconds() const {
+  return synced() ? time(nullptr) : 0;
+}
+
 String ClockService::timeString() const {
   char buffer[9];
   snprintf(buffer, sizeof(buffer), "%02u:%02u:%02u", hours(), minutes(), seconds());

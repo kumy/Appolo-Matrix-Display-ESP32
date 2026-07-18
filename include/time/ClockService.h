@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <time.h>
 
 // Falls back to a millis()-since-boot clock (nowMs_) until beginNtp() has
 // been called AND the SNTP sync has actually landed (checked via a sane
@@ -18,6 +19,9 @@ public:
   uint8_t hours() const;
   uint8_t minutes() const;
   uint8_t seconds() const;
+  // Only meaningful when synced() — 0 otherwise (no real epoch to report
+  // pre-sync). Used by CountdownPage to diff against a target time_t.
+  time_t epochSeconds() const;
 
 private:
   uint32_t nowMs_ = 0;

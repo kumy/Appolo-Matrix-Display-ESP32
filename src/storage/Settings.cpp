@@ -34,14 +34,28 @@ void Settings::load() {
   settings_.paletteLevelCount = prefs.getUChar("paletteLvls", settings_.paletteLevelCount);
   settings_.animationSpeedPercent = prefs.getUShort("animSpeed", settings_.animationSpeedPercent);
   settings_.activePageId = prefs.getUChar("activePage", settings_.activePageId);
-  settings_.clockAnalogMode = prefs.getBool("clockAnalog", settings_.clockAnalogMode);
+  settings_.clockFaceMode = prefs.getUChar("clockFace", settings_.clockFaceMode);
+  settings_.clockDisplayMode = prefs.getUChar("clockDispMode", settings_.clockDisplayMode);
+  settings_.clockAlternateIntervalMs = prefs.getUInt("clockAltMs", settings_.clockAlternateIntervalMs);
+  settings_.clockBlinkColon = prefs.getBool("clockBlink", settings_.clockBlinkColon);
+  settings_.clockAlign = prefs.getUChar("clockAlign", settings_.clockAlign);
+  settings_.clockValign = prefs.getUChar("clockValign", settings_.clockValign);
   settings_.textMessage = prefs.getString("textMsg", settings_.textMessage);
   settings_.textAlign = prefs.getUChar("textAlign", settings_.textAlign);
+  settings_.textValign = prefs.getUChar("textValign", settings_.textValign);
+  settings_.textOffsetX = prefs.getShort("textOffX", settings_.textOffsetX);
+  settings_.textOffsetY = prefs.getShort("textOffY", settings_.textOffsetY);
   settings_.textAnimMode = prefs.getUChar("textAnim", settings_.textAnimMode);
   settings_.textDirection = prefs.getUChar("textDir", settings_.textDirection);
   settings_.textEffect = prefs.getUChar("textEffect", settings_.textEffect);
   settings_.demoFixedScene = prefs.getUChar("demoScene", settings_.demoFixedScene);
   settings_.diagView = prefs.getUChar("diagView", settings_.diagView);
+  settings_.countdownYear = prefs.getUShort("cdYear", settings_.countdownYear);
+  settings_.countdownMonth = prefs.getUChar("cdMonth", settings_.countdownMonth);
+  settings_.countdownDay = prefs.getUChar("cdDay", settings_.countdownDay);
+  settings_.countdownHour = prefs.getUChar("cdHour", settings_.countdownHour);
+  settings_.countdownMinute = prefs.getUChar("cdMinute", settings_.countdownMinute);
+  settings_.fontName = prefs.getString("fontName", settings_.fontName);
   prefs.end();
 }
 
@@ -58,14 +72,28 @@ void Settings::save() const {
   prefs.putUChar("paletteLvls", settings_.paletteLevelCount);
   prefs.putUShort("animSpeed", settings_.animationSpeedPercent);
   prefs.putUChar("activePage", settings_.activePageId);
-  prefs.putBool("clockAnalog", settings_.clockAnalogMode);
+  prefs.putUChar("clockFace", settings_.clockFaceMode);
+  prefs.putUChar("clockDispMode", settings_.clockDisplayMode);
+  prefs.putUInt("clockAltMs", settings_.clockAlternateIntervalMs);
+  prefs.putBool("clockBlink", settings_.clockBlinkColon);
+  prefs.putUChar("clockAlign", settings_.clockAlign);
+  prefs.putUChar("clockValign", settings_.clockValign);
   prefs.putString("textMsg", settings_.textMessage);
   prefs.putUChar("textAlign", settings_.textAlign);
+  prefs.putUChar("textValign", settings_.textValign);
+  prefs.putShort("textOffX", settings_.textOffsetX);
+  prefs.putShort("textOffY", settings_.textOffsetY);
   prefs.putUChar("textAnim", settings_.textAnimMode);
   prefs.putUChar("textDir", settings_.textDirection);
   prefs.putUChar("textEffect", settings_.textEffect);
   prefs.putUChar("demoScene", settings_.demoFixedScene);
   prefs.putUChar("diagView", settings_.diagView);
+  prefs.putUShort("cdYear", settings_.countdownYear);
+  prefs.putUChar("cdMonth", settings_.countdownMonth);
+  prefs.putUChar("cdDay", settings_.countdownDay);
+  prefs.putUChar("cdHour", settings_.countdownHour);
+  prefs.putUChar("cdMinute", settings_.countdownMinute);
+  prefs.putString("fontName", settings_.fontName);
   prefs.end();
 }
 
@@ -104,8 +132,33 @@ void Settings::setActivePageId(uint8_t pageId) {
   save();
 }
 
-void Settings::setClockAnalogMode(bool analog) {
-  settings_.clockAnalogMode = analog;
+void Settings::setClockFaceMode(uint8_t mode) {
+  settings_.clockFaceMode = mode;
+  save();
+}
+
+void Settings::setClockDisplayMode(uint8_t mode) {
+  settings_.clockDisplayMode = mode;
+  save();
+}
+
+void Settings::setClockAlternateIntervalMs(uint32_t intervalMs) {
+  settings_.clockAlternateIntervalMs = intervalMs;
+  save();
+}
+
+void Settings::setClockBlinkColon(bool blink) {
+  settings_.clockBlinkColon = blink;
+  save();
+}
+
+void Settings::setClockAlign(uint8_t align) {
+  settings_.clockAlign = align;
+  save();
+}
+
+void Settings::setClockValign(uint8_t valign) {
+  settings_.clockValign = valign;
   save();
 }
 
@@ -116,6 +169,21 @@ void Settings::setTextMessage(const String& message) {
 
 void Settings::setTextAlign(uint8_t align) {
   settings_.textAlign = align;
+  save();
+}
+
+void Settings::setTextValign(uint8_t valign) {
+  settings_.textValign = valign;
+  save();
+}
+
+void Settings::setTextOffsetX(int16_t offsetX) {
+  settings_.textOffsetX = offsetX;
+  save();
+}
+
+void Settings::setTextOffsetY(int16_t offsetY) {
+  settings_.textOffsetY = offsetY;
   save();
 }
 
@@ -141,5 +209,19 @@ void Settings::setDemoFixedScene(uint8_t sceneIndex) {
 
 void Settings::setDiagView(uint8_t view) {
   settings_.diagView = view;
+  save();
+}
+
+void Settings::setCountdownTarget(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute) {
+  settings_.countdownYear = year;
+  settings_.countdownMonth = month;
+  settings_.countdownDay = day;
+  settings_.countdownHour = hour;
+  settings_.countdownMinute = minute;
+  save();
+}
+
+void Settings::setFontName(const String& name) {
+  settings_.fontName = name;
   save();
 }
